@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RMW AI Chatbot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+  <!-- ================= CHAT UI ================= -->
+
+  <div class="chat-wrapper">
+    <div class="chat-header">
+      <img src="/static/images/rmw-final-logo.png" alt="Bot Avatar" class="avatar" />
+      <h2>Ruby</h2>
+    </div>
+
+    <div id="chat-box" class="chat-box"></div>
+
+    <div class="enquire-container">
+      <button class="fixed-enquire-btn" onclick="openLeadModal()">Enquire</button>
+    </div>
+
+    <div class="input-container">
+      <input type="text" id="user-input" placeholder="Ask me anything..." />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+
+
+  <!-- ================= LEAD MODAL ================= -->
+
+  <div id="leadModal" class="lead-modal">
+
+    <div class="lead-content">
+
+      <h3>Share your details</h3>
+
+      <input id="leadName" placeholder="Name *" />
+      <input id="leadPhone" placeholder="Phone Number *" />
+      <input id="leadEmail" placeholder="Email Address *" />
+
+      <!-- ⭐ NEW SERVICE DROPDOWN -->
+      <select id="leadService">
+        <option value="">Select Service *</option>
+        <option>Digital marketing</option>
+        <option>Creative services</option>
+        <option>Print advertising</option>
+        <option>Radio advertising</option>
+        <option>Content marketing</option>
+        <option>Web development</option>
+        <option>Celebrity endorsements</option>
+        <option>Influencer marketing</option>
+      </select>
+
+      <textarea id="leadMsg" placeholder="Message (optional)"></textarea>
+
+      <p id="leadError" class="lead-error"></p>
+
+      <div class="lead-buttons">
+        <button onclick="submitLead()">Submit</button>
+        <button onclick="closeLeadModal()">Cancel</button>
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <script src="/static/main.js"></script>
+
+</body>
+
+</html>

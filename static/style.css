@@ -1,0 +1,371 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(to right, #6a11cb, #2575fc);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  margin: 0;
+}
+
+/* ================= CHAT WRAPPER ================= */
+
+.chat-wrapper {
+  width: 400px;
+  max-width: 95%;
+  background: #ffffff;
+  border-radius: 15px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  padding: 15px;
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
+}
+
+.chat-header h2 {
+  margin-left: 10px;
+  font-size: 1.2em;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.enquire-container {
+  display: flex;
+  justify-content: flex-end;
+  padding: 5px 10px;
+  background: #f0f0f0;
+}
+
+.fixed-enquire-btn {
+  padding: 10px 15px;
+  margin-left: 10px;
+  border-radius: 20px;
+  border: none;
+  background-color: #ffc107;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fixed-enquire-btn:hover {
+  background-color: #e0a800;
+}
+
+.fixed-enquire-btn:active {
+  transform: scale(0.98);
+}
+
+/* ================= CHAT BOX ================= */
+
+.chat-box {
+  flex: 1;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 350px;
+  background: #f5f5f5;
+  scroll-behavior: smooth;
+}
+
+.message {
+  padding: 10px 15px;
+  border-radius: 20px;
+  max-width: 75%;
+  word-wrap: break-word;
+  white-space: pre-line;
+  /* ⭐ THIS FIX */
+  position: relative;
+  opacity: 0;
+  animation: fadeIn 0.3s forwards;
+}
+
+
+.user-message {
+  align-self: flex-end;
+  background-color: #007bff;
+  color: white;
+}
+
+.bot-message {
+  align-self: flex-start;
+  background-color: #e5e5ea;
+  color: black;
+}
+
+.bot-source {
+  font-size: 0.75em;
+  color: #555;
+  margin-top: 2px;
+}
+
+/* ================= INPUT ================= */
+
+.input-container {
+  display: flex;
+  padding: 10px;
+  background: #f0f0f0;
+  border-top: 1px solid #ddd;
+}
+
+#user-input {
+  flex: 1;
+  padding: 10px 15px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  outline: none;
+}
+
+button {
+  padding: 10px 15px;
+  margin-left: 10px;
+  border-radius: 20px;
+  border: none;
+  background-color: #007bff;
+  color: white;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+/* ================= ENQUIRE BUTTON ================= */
+
+.enquire-btn {
+  padding: 8px 18px;
+  border-radius: 18px;
+  border: none;
+  background: linear-gradient(135deg, #007bff, #0056b3);
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  animation: fadeIn 0.3s forwards;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 6px;
+}
+
+.enquire-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.enquire-btn:active {
+  transform: scale(0.97);
+}
+
+/* ================= ANIMATIONS ================= */
+
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
+}
+
+/* Typing animation */
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.typing span {
+  width: 8px;
+  height: 8px;
+  background: #555;
+  border-radius: 50%;
+  display: inline-block;
+  animation: blink 1.4s infinite both;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+
+  0%,
+  80%,
+  100% {
+    opacity: 0;
+  }
+
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ================= RESPONSIVE ================= */
+
+@media (max-width: 480px) {
+  .chat-wrapper {
+    width: 95%;
+    height: 90vh;
+  }
+}
+
+/* ===================================================== */
+/* ================= INLINE LEAD FORM ================= */
+/* ===================================================== */
+
+.inline-lead-form-wrapper {
+  max-width: 100% !important;
+  padding: 0 !important;
+  background: transparent !important;
+  align-self: stretch !important;
+}
+
+.inline-lead-form-wrapper .lead-content {
+  background: white;
+  padding: 20px;
+  border-radius: 14px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fadeIn 0.3s ease;
+}
+
+.inline-lead-form-wrapper .lead-content h3 {
+  margin: 0;
+  text-align: center;
+  color: #333;
+  font-size: 1.1em;
+}
+
+.inline-lead-form-wrapper .lead-content input,
+.inline-lead-form-wrapper .lead-content textarea,
+.inline-lead-form-wrapper .lead-content select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.inline-lead-form-wrapper .lead-content input:focus,
+.inline-lead-form-wrapper .lead-content textarea:focus,
+.inline-lead-form-wrapper .lead-content select:focus {
+  border-color: #007bff;
+}
+
+.inline-lead-form-wrapper .lead-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inline-lead-form-wrapper .lead-buttons button {
+  flex: 1;
+}
+
+.inline-lead-form-wrapper .lead-error {
+  color: red;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ===================================================== */
+/* ================= LEAD MODAL STYLING (FALLBACK) ===== */
+/* ===================================================== */
+
+.lead-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.55);
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+
+.lead-content {
+  background: white;
+  padding: 25px;
+  border-radius: 14px;
+  width: 320px;
+  max-width: 90%;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: modalPop 0.25s ease;
+}
+
+.lead-content h3 {
+  margin: 0;
+  text-align: center;
+  color: #333;
+}
+
+.lead-content input,
+.lead-content textarea,
+.lead-content select {
+
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  font-size: 14px;
+  outline: none;
+}
+
+.lead-content input:focus,
+.lead-content textarea:focus,
+.lead-content select:focus {
+  border-color: #007bff;
+}
+
+
+.lead-buttons {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.lead-buttons button {
+  flex: 1;
+}
+
+.lead-error {
+  color: red;
+  font-size: 12px;
+  text-align: center;
+}
+
+@keyframes modalPop {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
