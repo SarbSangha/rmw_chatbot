@@ -1,14 +1,15 @@
-fastapi
-uvicorn[standard]
-python-dotenv
-python-multipart
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+gunicorn==23.0.0
+python-dotenv==1.0.1
+pydantic-settings==2.5.2
 
-langchain
-langchain-community
-langchain-openai
-langgraph
-chromadb
-pypdf
-python-docx
-docx2txt
+langchain==0.3.1
+langchain-community==0.3.1
+langchain-openai==0.2.1
+langchain-chroma==0.1.4
+langgraph==0.2.28
 
+chromadb==0.4.24  # Fixed version
+docx2txt==0.9
+python-docx==1.1.2
