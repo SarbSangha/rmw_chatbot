@@ -1,11 +1,16 @@
 # apfrom pydantic import BaseSettingsp/core/config.py
 
 from pydantic_settings import BaseSettings
+from pydantic import Field
 
 
 class Settings(BaseSettings):
     # OpenAI or OpenAI-compatible API key
-    OPENAI_API_KEY: str
+    # ...
+    OPENAI_API_KEY: str = Field(default="", env="OPENAI_API_KEY")  # Allow empty
+    GEMINI_API_KEY: str = Field(..., env="GEMINI_API_KEY")  # Required for Gemini
+    # ...
+
 
     # Path where Chroma will persist its DB
     CHROMA_PERSIST_DIR: str = "data/chroma_db"

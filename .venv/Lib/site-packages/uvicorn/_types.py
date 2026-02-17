@@ -32,8 +32,20 @@ from __future__ import annotations
 
 import sys
 import types
-from collections.abc import Awaitable, Callable, Iterable, MutableMapping
-from typing import Any, Literal, Protocol, TypedDict
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Iterable,
+    Literal,
+    MutableMapping,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypedDict,
+    Union,
+)
 
 if sys.version_info >= (3, 11):  # pragma: py-lt-311
     from typing import NotRequired
@@ -42,9 +54,9 @@ else:  # pragma: py-gte-311
 
 # WSGI
 Environ = MutableMapping[str, Any]
-ExcInfo = tuple[type[BaseException], BaseException, types.TracebackType | None]
-StartResponse = Callable[[str, Iterable[tuple[str, str]], ExcInfo | None], None]
-WSGIApp = Callable[[Environ, StartResponse], Iterable[bytes] | BaseException]
+ExcInfo = Tuple[Type[BaseException], BaseException, Optional[types.TracebackType]]
+StartResponse = Callable[[str, Iterable[Tuple[str, str]], Optional[ExcInfo]], None]
+WSGIApp = Callable[[Environ, StartResponse], Union[Iterable[bytes], BaseException]]
 
 
 # ASGI
@@ -93,8 +105,8 @@ class LifespanScope(TypedDict):
     state: NotRequired[dict[str, Any]]
 
 
-WWWScope = HTTPScope | WebSocketScope
-Scope = HTTPScope | WebSocketScope | LifespanScope
+WWWScope = Union[HTTPScope, WebSocketScope]
+Scope = Union[HTTPScope, WebSocketScope, LifespanScope]
 
 
 class HTTPRequestEvent(TypedDict):
@@ -159,7 +171,7 @@ class _WebSocketReceiveEventText(TypedDict):
     text: str
 
 
-WebSocketReceiveEvent = _WebSocketReceiveEventBytes | _WebSocketReceiveEventText
+WebSocketReceiveEvent = Union[_WebSocketReceiveEventBytes, _WebSocketReceiveEventText]
 
 
 class _WebSocketSendEventBytes(TypedDict):
@@ -174,7 +186,7 @@ class _WebSocketSendEventText(TypedDict):
     text: str
 
 
-WebSocketSendEvent = _WebSocketSendEventBytes | _WebSocketSendEventText
+WebSocketSendEvent = Union[_WebSocketSendEventBytes, _WebSocketSendEventText]
 
 
 class WebSocketResponseStartEvent(TypedDict):
@@ -227,36 +239,36 @@ class LifespanShutdownFailedEvent(TypedDict):
     message: str
 
 
-WebSocketEvent = WebSocketReceiveEvent | WebSocketDisconnectEvent | WebSocketConnectEvent
+WebSocketEvent = Union[WebSocketReceiveEvent, WebSocketDisconnectEvent, WebSocketConnectEvent]
 
 
-ASGIReceiveEvent = (
-    HTTPRequestEvent
-    | HTTPDisconnectEvent
-    | WebSocketConnectEvent
-    | WebSocketReceiveEvent
-    | WebSocketDisconnectEvent
-    | LifespanStartupEvent
-    | LifespanShutdownEvent
-)
+ASGIReceiveEvent = Union[
+    HTTPRequestEvent,
+    HTTPDisconnectEvent,
+    WebSocketConnectEvent,
+    WebSocketReceiveEvent,
+    WebSocketDisconnectEvent,
+    LifespanStartupEvent,
+    LifespanShutdownEvent,
+]
 
 
-ASGISendEvent = (
-    HTTPResponseStartEvent
-    | HTTPResponseBodyEvent
-    | HTTPResponseTrailersEvent
-    | HTTPServerPushEvent
-    | HTTPDisconnectEvent
-    | WebSocketAcceptEvent
-    | WebSocketSendEvent
-    | WebSocketResponseStartEvent
-    | WebSocketResponseBodyEvent
-    | WebSocketCloseEvent
-    | LifespanStartupCompleteEvent
-    | LifespanStartupFailedEvent
-    | LifespanShutdownCompleteEvent
-    | LifespanShutdownFailedEvent
-)
+ASGISendEvent = Union[
+    HTTPResponseStartEvent,
+    HTTPResponseBodyEvent,
+    HTTPResponseTrailersEvent,
+    HTTPServerPushEvent,
+    HTTPDisconnectEvent,
+    WebSocketAcceptEvent,
+    WebSocketSendEvent,
+    WebSocketResponseStartEvent,
+    WebSocketResponseBodyEvent,
+    WebSocketCloseEvent,
+    LifespanStartupCompleteEvent,
+    LifespanStartupFailedEvent,
+    LifespanShutdownCompleteEvent,
+    LifespanShutdownFailedEvent,
+]
 
 
 ASGIReceiveCallable = Callable[[], Awaitable[ASGIReceiveEvent]]
@@ -269,6 +281,13 @@ class ASGI2Protocol(Protocol):
     async def __call__(self, receive: ASGIReceiveCallable, send: ASGISendCallable) -> None: ...  # pragma: no cover
 
 
-ASGI2Application = type[ASGI2Protocol]
-ASGI3Application = Callable[[Scope, ASGIReceiveCallable, ASGISendCallable], Awaitable[None]]
-ASGIApplication = ASGI2Application | ASGI3Application
+ASGI2Application = Type[ASGI2Protocol]
+ASGI3Application = Callable[
+    [
+        Scope,
+        ASGIReceiveCallable,
+        ASGISendCallable,
+    ],
+    Awaitable[None],
+]
+ASGIApplication = Union[ASGI2Application, ASGI3Application]

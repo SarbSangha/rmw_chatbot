@@ -7,15 +7,12 @@ Defines the LangGraph RAG workflow with strict behavior:
 """
 
 from typing import TypedDict, List
-
 from langgraph.graph import StateGraph, END
 from langchain_core.documents import Document
-from langchain_openai import ChatOpenAI
-
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from app.rag.vectorstore import get_retriever
 from app.rag.prompts import STRICT_RAG_PROMPT
 from app.core.config import settings
-
 
 class RAGState(TypedDict):
     # The user's question
@@ -25,20 +22,20 @@ class RAGState(TypedDict):
     # Final answer text to return
     answer: str
 
-
 # Create shared LLM and retriever instances
-_llm = ChatOpenAI(
-    api_key=settings.OPENAI_API_KEY,
-    model="gpt-4o-mini",  # choose your model
+_llm = ChatGoogleGenerativeAI(
+    # model="gemini-pro",  # ✅ Free tier compatible
+    model="gemini-3-flash-preview",  # ✅ Free tier compatible
+    google_api_key=settings.GEMINI_API_KEY,
+    temperature=0
 )
+
+
 _retriever = get_retriever(k=4)
 
-
 def retrieve_node(state: RAGState) -> RAGState:
-    docs = _retriever.invoke(state["question"])  # ✅ NEW
+    docs = _retriever.invoke(state["question"])
     return {**state, "docs": docs}
-
-
 
 def strict_guard_node(state: RAGState) -> RAGState:
     """
@@ -51,12 +48,9 @@ def strict_guard_node(state: RAGState) -> RAGState:
         }
     return state  # Let LLM answer if ANY docs found
 
-
-
 def answer_node(state: RAGState) -> RAGState:
     """
     Node 3: Use the LLM to generate an answer from the retrieved docs.
-    - If 'answer' is already set (from strict_guard_node), we just return.
     """
     # If strict_guard_node already decided answer, skip LLM
     if state.get("answer"):
@@ -74,18 +68,27 @@ def answer_node(state: RAGState) -> RAGState:
     # Call LLM
     resp = _llm.invoke(messages)
 
+    # FIX: Extract text from new response format (v4.x SDK)
+    if hasattr(resp, 'content') and isinstance(resp.content, list):
+        # New format: list of content parts
+        answer_text = resp.content[0]['text'] if resp.content else ""
+    elif hasattr(resp, 'content') and isinstance(resp.content, str):
+        # Old format: direct string
+        answer_text = resp.content
+    else:
+        answer_text = str(resp.content)
+
     # Save answer in state and return
-    return {**state, "answer": resp.content}
+    return {**state, "answer": answer_text}
 
 
 def _guard_condition(state: RAGState) -> str:
     """
     Condition function used by LangGraph to decide next step:
     - If 'answer' already exists (i.e., strict_guard_node rejected), go to END.
-    - Otherwise, go to 'answer' node.
+    - Otherwise, go to 'generate' node.
     """
     return "reject" if state.get("answer") else "ok"
-
 
 def build_rag_graph():
     """
@@ -93,10 +96,10 @@ def build_rag_graph():
     """
     graph = StateGraph(RAGState)
 
-    # Register nodes
+    # Register nodes (FIXED: "generate" instead of "answer")
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("strict_guard", strict_guard_node)
-    graph.add_node("answer", answer_node)
+    graph.add_node("generate", answer_node)  # FIXED: Unique name
 
     # Entry point: start at retrieve
     graph.set_entry_point("retrieve")
@@ -104,22 +107,21 @@ def build_rag_graph():
     # After retrieve -> go to strict_guard
     graph.add_edge("retrieve", "strict_guard")
 
-    # From strict_guard -> either END or answer, based on condition
+    # From strict_guard -> either END or generate, based on condition
     graph.add_conditional_edges(
         "strict_guard",
         _guard_condition,
         {
             "reject": END,      # if reject, stop with existing answer
-            "ok": "answer",     # otherwise, go to answer node
+            "ok": "generate",   # FIXED: Match new node name
         },
     )
 
-    # After answer -> END
-    graph.add_edge("answer", END)
+    # After generate -> END
+    graph.add_edge("generate", END)  # FIXED: Match new node name
 
     # Compile graph to a runnable object
     return graph.compile()
-
 
 # Single compiled graph instance to import elsewhere
 rag_graph = build_rag_graph()

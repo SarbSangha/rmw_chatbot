@@ -1,11 +1,13 @@
 // ================= INTENT CONFIG =================
 
+// ================= INTENT CONFIG ================= 
 const leadKeywords = [
-  "contact", "price", "pricing", "cost", "charge",
-  "charges", "quote", "quotation", "hire",
-  "project", "call", "email", "services",
-  "interested", "talk", "budget", "estimate"
+    "contact", "price", "pricing", "cost", "charge", "charges", 
+    "quote", "quotation", "hire", "project", "call", "email", 
+    "services", "interested", "talk", "budget", "estimate",
+    "how much", "rate", "fees", "package"  // ✅ ADD PRICING KEYWORDS
 ];
+
 
 let leadShown = false;
 
@@ -31,30 +33,23 @@ const servicesList =
 
 
 // ================= SUB SERVICE MAP =================
-
+// ================= SUB SERVICE MAP ================= 
 const subServiceMap = {
-
-  "digital marketing":
-    `In Digital Marketing service:
-      We have :
+    "digital marketing": `In Digital Marketing service: We have :
 1️⃣ SEO (Search Engine Optimization)
 2️⃣ PPC (Google Ads)
 3️⃣ Social Media Management & ORM
 4️⃣ Lead Generation
 5️⃣ Brand Awareness`,
 
-  "creative":
-    `In Creative Service:
-    We have :
+    "creative": `In Creative Service: We have :
 1️⃣ Branding & Identity Development
 2️⃣ Graphic Design
 3️⃣ Logo Design
 4️⃣ Print Advertising Design
 5️⃣ Packaging Design`,
 
-  "print advertising":
-    `In Print Advertising service:
-     We have :
+    "print advertising": `In Print Advertising service: We have :
 1️⃣ Advertisement Design
 2️⃣ Ad Placement
 3️⃣ Copywriting
@@ -62,9 +57,7 @@ const subServiceMap = {
 5️⃣ Ad Size Optimization
 6️⃣ Ad Scheduling`,
 
-  "radio":
-    `In Radio Advertising service:
-     We have :
+    "radio": `In Radio Advertising service: We have :
 1️⃣ Advertising Concept Development
 2️⃣ Scriptwriting
 3️⃣ Voiceover Casting
@@ -72,26 +65,35 @@ const subServiceMap = {
 5️⃣ Media Planning & Buying
 6️⃣ Cost Negotiations`,
 
-  "content marketing":
-    `In Content Marketing service:
-     We have :
+    "content marketing": `In Content Marketing service: We have :
 1️⃣ Customized Content Strategy
 2️⃣ Email & Newsletter Marketing
 3️⃣ Asset Creation & Infographics
 4️⃣ Content Promotion & Optimization`,
 
-  "web":
-    `In Web Development service:
-    We have :
+    "web": `In Web Development service: We have :
 1️⃣ UI/UX Design
 2️⃣ Custom Design & Development
 3️⃣ E-Commerce Website Development
 4️⃣ Landing Page Development
 5️⃣ WordPress Web Design`,
 
-  "celebrity":
-    `In Celebrity Endorsement service:
-     We have :
+    // ✅ ADD EXPLICIT UI/UX DETECTION
+    "ui/ux": `In Web Development service: We have :
+1️⃣ UI/UX Design
+2️⃣ Custom Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design`,
+
+    "uiux": `In Web Development service: We have :
+1️⃣ UI/UX Design
+2️⃣ Custom Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design`,
+
+    "celebrity": `In Celebrity Endorsement service: We have :
 1️⃣ Celebrity Identification
 2️⃣ Contract Negotiations
 3️⃣ Creative Collaboration
@@ -99,9 +101,7 @@ const subServiceMap = {
 5️⃣ Public Relations
 6️⃣ Legal Compliance`,
 
-  "influencer":
-    `In Influencer Marketing service:
-    We have :
+    "influencer": `In Influencer Marketing service: We have :
 1️⃣ Influencer Identification
 2️⃣ Cost-Benefit Analysis
 3️⃣ Terms Negotiations
@@ -126,76 +126,78 @@ function checkSubServices(message) {
 
 // ================= CHAT FUNCTION =================
 
+// ================= CHAT FUNCTION ================= 
 let chatHistory = []; // Store last few messages
 
 async function sendMessage() {
+    const input = document.getElementById('user-input');
+    const message = input.value.trim();
+    if (!message) return;
 
-  const input = document.getElementById('user-input');
-  const message = input.value.trim();
-  if (!message) return;
+    addMessage('You', message);
+    input.value = '';
 
-  addMessage('You', message);
-  input.value = '';
+    const lower = message.toLowerCase();
 
-  const lower = message.toLowerCase();
-
-  // MAIN SERVICES LIST
-  if (lower.includes("service")) {
-    addMessage('Bot', servicesList);
-    setTimeout(() => {
-      addMessage('Bot', "I can connect you with our team 👇");
-      addEnquireButton();
-    }, 300);
-    return;
-  }
-
-  // SUB SERVICES
-  const sub = checkSubServices(message);
-  if (sub) {
-    addMessage('Bot', sub);
-    setTimeout(() => {
-      addMessage('Bot', "I can connect you with our team 👇");
-      addEnquireButton();
-    }, 300);
-    return;
-  }
-
-  // NORMAL BACKEND CHAT
-  const typingIndicator = addMessage('Bot', '', true);
-
-  try {
-    const res = await fetch('/v1/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        message: message,
-        session_id: null
-      })
-    });
-
-    const data = await res.json();
-
-    typingIndicator.remove();
-    addMessage('Bot', data.answer, false, data.sources || []);
-
-    if (shouldShowLeadForm(message) && !leadShown) {
-      setTimeout(() => {
-        addMessage('Bot', "I can connect you with our team 👇");
-        addEnquireButton();
-      }, 300);
+    // ✅ PRIORITY 1: CHECK SUB-SERVICES FIRST (before generic "service" keyword)
+    const sub = checkSubServices(message);
+    if (sub) {
+        addMessage('Bot', sub);
+        setTimeout(() => {
+            addMessage('Bot', "I can connect you with our team 👇");
+            addEnquireButton();
+        }, 300);
+        return;
     }
 
-  } catch (err) {
-    console.error(err);
-    typingIndicator.remove();
-    addMessage('Bot', 'Sorry, something went wrong.');
-  }
+    // ✅ PRIORITY 2: MAIN SERVICES LIST (only if asking for full list)
+    // More specific matching: "services", "what services", "your services", "all services"
+    if (
+        lower === 'services' || 
+        lower === 'service' ||
+        /what (are )?(your |all )?services/.test(lower) ||
+        /show (me )?(your |all )?services/.test(lower) ||
+        /list (of )?services/.test(lower)
+    ) {
+        addMessage('Bot', servicesList);
+        setTimeout(() => {
+            addMessage('Bot', "I can connect you with our team 👇");
+            addEnquireButton();
+        }, 300);
+        return;
+    }
 
-
+    // ✅ PRIORITY 3: BACKEND RAG CHAT (for pricing, UI/UX, specific queries)
+    const typingIndicator = addMessage('Bot', '', true);
+    
+    try {
+        const res = await fetch('/v1/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                message: message,
+                session_id: null 
+            })
+        });
+        
+        const data = await res.json();
+        typingIndicator.remove();
+        
+        addMessage('Bot', data.answer, false, data.sources || []);
+        
+        // Show enquire button if lead intent detected
+        if (shouldShowLeadForm(message) && !leadShown) {
+            setTimeout(() => {
+                addMessage('Bot', "I can connect you with our team 👇");
+                addEnquireButton();
+            }, 300);
+        }
+    } catch (err) {
+        console.error(err);
+        typingIndicator.remove();
+        addMessage('Bot', 'Sorry, something went wrong.');
+    }
 }
-
 
 
 // ================= MESSAGE UI =================

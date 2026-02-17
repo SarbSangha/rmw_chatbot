@@ -26,7 +26,7 @@ def is_union(tp: Optional[Type[Any]]) -> bool:
     else:
         import types
 
-        return tp is Union or tp is types.UnionType  # type: ignore[comparison-overlap]
+        return tp is Union or tp is types.UnionType
 
 
 def is_typeddict(tp: Type[Any]) -> bool:

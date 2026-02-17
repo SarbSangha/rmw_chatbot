@@ -8,9 +8,6 @@ if TYPE_CHECKING:
     from langchain_community.document_compressors.flashrank_rerank import (
         FlashrankRerank,
     )
-    from langchain_community.document_compressors.infinity_rerank import (
-        InfinityRerank,
-    )
     from langchain_community.document_compressors.jina_rerank import (
         JinaRerank,
     )
@@ -35,7 +32,6 @@ _module_lookup = {
     "FlashrankRerank": "langchain_community.document_compressors.flashrank_rerank",
     "DashScopeRerank": "langchain_community.document_compressors.dashscope_rerank",
     "VolcengineRerank": "langchain_community.document_compressors.volcengine_rerank",
-    "InfinityRerank": "langchain_community.document_compressors.infinity_rerank",
 }
 
 
@@ -54,5 +50,4 @@ __all__ = [
     "RankLLMRerank",
     "DashScopeRerank",
     "VolcengineRerank",
-    "InfinityRerank",
 ]

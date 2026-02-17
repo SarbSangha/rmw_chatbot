@@ -33,6 +33,7 @@ from ..._parsing import (
     maybe_parse_content,
     parse_chat_completion,
     get_input_tool_by_name,
+    solve_response_format_t,
     parse_function_tool_arguments,
 )
 from ...._streaming import Stream, AsyncStream
@@ -662,7 +663,7 @@ class ChoiceEventState:
                     # type variable, e.g. `ContentDoneEvent[MyModelType]`
                     cast(  # pyright: ignore[reportUnnecessaryCast]
                         "type[ContentDoneEvent[ResponseFormatT]]",
-                        cast(Any, ContentDoneEvent),
+                        cast(Any, ContentDoneEvent)[solve_response_format_t(response_format)],
                     ),
                     type="content.done",
                     content=choice_snapshot.message.content,

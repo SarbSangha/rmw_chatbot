@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.chat import router as chat_router
+from app.api.v1.leads import router as leads_router  # ✅ NEW IMPORT
 
 # Enable detailed logging
 logging.basicConfig(level=logging.DEBUG)
@@ -25,7 +26,6 @@ app = FastAPI(
 # Serve static files from the "static" directory
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-
 # Add middleware to catch and print ALL errors
 @app.middleware("http")
 async def catch_exceptions_middleware(request: Request, call_next):
@@ -37,10 +37,11 @@ async def catch_exceptions_middleware(request: Request, call_next):
         traceback.print_exc()
         raise
 
-
 # Include the chat router
 app.include_router(chat_router)
 
+# Include the leads router (no prefix so /submit-lead works directly)
+app.include_router(leads_router)  # ✅ NEW ROUTER
 
 @app.get("/")
 async def root():
