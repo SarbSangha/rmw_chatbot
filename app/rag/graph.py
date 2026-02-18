@@ -68,15 +68,22 @@ def answer_node(state: RAGState) -> RAGState:
     # Call LLM
     resp = _llm.invoke(messages)
 
-    # FIX: Extract text from new response format (v4.x SDK)
-    if hasattr(resp, 'content') and isinstance(resp.content, list):
-        # New format: list of content parts
-        answer_text = resp.content[0]['text'] if resp.content else ""
-    elif hasattr(resp, 'content') and isinstance(resp.content, str):
-        # Old format: direct string
-        answer_text = resp.content
-    else:
-        answer_text = str(resp.content)
+    # ✅ FIX: Robust response parsing
+    try:
+        if hasattr(resp, 'content'):
+            if isinstance(resp.content, list):
+                # New format: list of content parts
+                answer_text = resp.content[0].get('text', '') if resp.content else "I couldn't generate an answer."
+            elif isinstance(resp.content, str):
+                # Old format: direct string
+                answer_text = resp.content
+            else:
+                answer_text = str(resp.content)
+        else:
+            answer_text = str(resp)
+    except Exception as e:
+        logger.error(f"Error parsing LLM response: {e}")
+        answer_text = "I encountered an error processing the response."
 
     # Save answer in state and return
     return {**state, "answer": answer_text}
