@@ -6,23 +6,49 @@ Service layer that:
 - Returns answer string
 """
 
+import logging
+import time
+
 from app.rag.graph import rag_graph
+
+logger = logging.getLogger(__name__)
 
 
 def run_chat(question: str) -> str:
     """
     Run the RAG graph for a single user question.
-    For now, this is stateless (no history).
     """
-    # Initial graph state
+    start = time.time()
+    logger.info(f"📥 Question: {question[:80]}")
+
     state = {
         "question": question,
         "docs": [],
         "answer": "",
     }
 
-    # Invoke the LangGraph workflow synchronously
-    result_state = rag_graph.invoke(state)
+    try:
+        result_state = rag_graph.invoke(state)
+        answer = result_state.get("answer", "").strip()
 
-    # Extract final answer from state
-    return result_state["answer"]
+        elapsed = time.time() - start
+        logger.info(f"⏱️ Total time: {elapsed:.2f}s")
+
+        if not answer:
+            return (
+                "I couldn't find a specific answer for that.\n"
+                "Feel free to ask about our services, or contact us:\n"
+                "📞 +91-7290002168\n"
+                "📧 info@ritzmediaworld.com"
+            )
+
+        return answer
+
+    except Exception as e:
+        elapsed = time.time() - start
+        logger.error(f"❌ RAG error after {elapsed:.2f}s: {str(e)}")
+        return (
+            "I'm having trouble right now. Please contact us:\n"
+            "📞 +91-7290002168\n"
+            "📧 info@ritzmediaworld.com"
+        )

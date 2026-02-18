@@ -1,134 +1,155 @@
 # app/rag/graph.py
-"""
-Defines the LangGraph RAG workflow with strict behavior:
-- Retrieve relevant chunks
-- If nothing relevant, return fixed message
-- Otherwise, ask LLM to answer using only context
-"""
-
+import logging
 from typing import TypedDict, List
+
 from langgraph.graph import StateGraph, END
 from langchain_core.documents import Document
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
+
 from app.rag.vectorstore import get_retriever
 from app.rag.prompts import STRICT_RAG_PROMPT
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
+
 class RAGState(TypedDict):
-    # The user's question
     question: str
-    # Documents retrieved from vector DB
     docs: List[Document]
-    # Final answer text to return
     answer: str
 
-# Create shared LLM and retriever instances
+
+# ✅ LangChain wrapper with max_retries=0
 _llm = ChatGoogleGenerativeAI(
-    # model="gemini-pro",  # ✅ Free tier compatible
-    model="gemini-3-flash-preview",  # ✅ Free tier compatible
+    model="gemini-2.0-flash-lite",
     google_api_key=settings.GEMINI_API_KEY,
-    temperature=0
+    temperature=0,
+    max_output_tokens=400,
+    top_p=0.8,
+    top_k=40,
+    convert_system_message_to_human=True,
+    max_retries=0,        # ✅ No retrying
+    request_timeout=10,    # ✅ Hard 6s timeout
 )
 
+_retriever = get_retriever(k=3)
 
-_retriever = get_retriever(k=4)
+
+# ================= NODES =================
 
 def retrieve_node(state: RAGState) -> RAGState:
-    docs = _retriever.invoke(state["question"])
-    return {**state, "docs": docs}
+    try:
+        docs = _retriever.invoke(state["question"])
+        logger.info(f"📚 Retrieved {len(docs)} docs for: {state['question'][:50]}")
+        return {**state, "docs": docs}
+    except Exception as e:
+        logger.error(f"❌ Retrieval error: {e}")
+        return {**state, "docs": []}
+
 
 def strict_guard_node(state: RAGState) -> RAGState:
-    """
-    Only reject if ZERO documents found. Otherwise let LLM handle with context.
-    """
     if len(state["docs"]) == 0:
         return {
             **state,
-            "answer": "I can only help with information from our agency documents. Ask me about our services, team, location, or capabilities!"
+            "answer": (
+                "I can only help with information about Ritz Media World. "
+                "Ask me about our services, team, or capabilities! 😊"
+            )
         }
-    return state  # Let LLM answer if ANY docs found
+    return state
+
 
 def answer_node(state: RAGState) -> RAGState:
-    """
-    Node 3: Use the LLM to generate an answer from the retrieved docs.
-    """
-    # If strict_guard_node already decided answer, skip LLM
     if state.get("answer"):
         return state
 
-    # Concatenate contents of retrieved docs as context
-    context = "\n\n".join(doc.page_content for doc in state["docs"])
-
-    # Build messages for the chat LLM using our strict prompt
-    messages = STRICT_RAG_PROMPT.format_messages(
-        context=context,
-        question=state["question"],
-    )
-
-    # Call LLM
-    resp = _llm.invoke(messages)
-
-    # ✅ FIX: Robust response parsing
     try:
+        context_parts = [doc.page_content[:1500] for doc in state["docs"][:3]]
+        context = "\n\n".join(context_parts)
+
+        messages = STRICT_RAG_PROMPT.format_messages(
+            context=context,
+            question=state["question"],
+        )
+
+        logger.info(f"🤖 Calling Gemini for: {state['question'][:50]}")
+        resp = _llm.invoke(messages)
+
+        # Parse response
         if hasattr(resp, 'content'):
             if isinstance(resp.content, list):
-                # New format: list of content parts
-                answer_text = resp.content[0].get('text', '') if resp.content else "I couldn't generate an answer."
+                answer_text = resp.content[0].get('text', '') if resp.content else ""
             elif isinstance(resp.content, str):
-                # Old format: direct string
                 answer_text = resp.content
             else:
                 answer_text = str(resp.content)
         else:
             answer_text = str(resp)
+
+        answer_text = answer_text.strip()
+
+        if not answer_text:
+            answer_text = (
+                "Please contact us:\n"
+                "📞 +91-7290002168\n"
+                "📧 info@ritzmediaworld.com"
+            )
+
+        logger.info(f"✅ Answer ready ({len(answer_text)} chars)")
+        return {**state, "answer": answer_text}
+
     except Exception as e:
-        logger.error(f"Error parsing LLM response: {e}")
-        answer_text = "I encountered an error processing the response."
+        error_str = str(e)
 
-    # Save answer in state and return
-    return {**state, "answer": answer_text}
+        # ✅ Instant quota fallback
+        if any(x in error_str for x in ["429", "RESOURCE_EXHAUSTED", "quota", "Quota"]):
+            logger.warning("⚠️ Quota exceeded — instant fallback")
+            return {
+                **state,
+                "answer": (
+                    "I'm temporarily at capacity 🙏 Please try again in a minute.\n\n"
+                    "Or contact our team directly:\n"
+                    "📞 +91-7290002168\n"
+                    "📧 info@ritzmediaworld.com"
+                )
+            }
 
+        logger.error(f"❌ LLM error: {error_str}")
+        return {
+            **state,
+            "answer": (
+                "Something went wrong. Please contact us:\n"
+                "📞 +91-7290002168\n"
+                "📧 info@ritzmediaworld.com"
+            )
+        }
+
+
+# ================= ROUTING =================
 
 def _guard_condition(state: RAGState) -> str:
-    """
-    Condition function used by LangGraph to decide next step:
-    - If 'answer' already exists (i.e., strict_guard_node rejected), go to END.
-    - Otherwise, go to 'generate' node.
-    """
     return "reject" if state.get("answer") else "ok"
 
+
+# ================= GRAPH =================
+
 def build_rag_graph():
-    """
-    Build and compile the RAG graph.
-    """
     graph = StateGraph(RAGState)
 
-    # Register nodes (FIXED: "generate" instead of "answer")
     graph.add_node("retrieve", retrieve_node)
     graph.add_node("strict_guard", strict_guard_node)
-    graph.add_node("generate", answer_node)  # FIXED: Unique name
+    graph.add_node("generate", answer_node)
 
-    # Entry point: start at retrieve
     graph.set_entry_point("retrieve")
-
-    # After retrieve -> go to strict_guard
     graph.add_edge("retrieve", "strict_guard")
-
-    # From strict_guard -> either END or generate, based on condition
     graph.add_conditional_edges(
         "strict_guard",
         _guard_condition,
-        {
-            "reject": END,      # if reject, stop with existing answer
-            "ok": "generate",   # FIXED: Match new node name
-        },
+        {"reject": END, "ok": "generate"},
     )
+    graph.add_edge("generate", END)
 
-    # After generate -> END
-    graph.add_edge("generate", END)  # FIXED: Match new node name
-
-    # Compile graph to a runnable object
     return graph.compile()
 
-# Single compiled graph instance to import elsewhere
+
 rag_graph = build_rag_graph()

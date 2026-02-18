@@ -15,7 +15,6 @@ function shouldShowLeadForm(msg) {
 
 // ================= INTENT DETECTION ENGINE =================
 const intentPatterns = {
-    // Services list intent (catches ALL variations)
     servicesList: [
         'service', 'services',
         'what do you do', 'what do you offer', 'what you do', 'what you offer',
@@ -29,32 +28,24 @@ const intentPatterns = {
     ]
 };
 
-// Intent detection function
 function detectIntent(message) {
     const lower = message.toLowerCase();
-    
-    // 1. Check for sub-services FIRST (highest priority)
+
+    // Priority 1: Sub-services
     for (const key in subServiceMap) {
         if (lower.includes(key)) {
             return { type: 'sub_service', service: key };
         }
     }
-    
-    // 2. Check for services list (comprehensive check)
-    const hasServiceIntent = intentPatterns.servicesList.some(pattern => 
-        lower.includes(pattern)
-    );
-    
-    if (hasServiceIntent) {
-        return { type: 'services_list' };
-    }
-    
-    // 3. Check for pricing/contact intent
-    if (shouldShowLeadForm(message)) {
-        return { type: 'pricing_contact' };
-    }
-    
-    // 4. Default: general query (goes to RAG backend)
+
+    // Priority 2: Services list
+    const hasServiceIntent = intentPatterns.servicesList.some(p => lower.includes(p));
+    if (hasServiceIntent) return { type: 'services_list' };
+
+    // Priority 3: Pricing/Contact
+    if (shouldShowLeadForm(message)) return { type: 'pricing_contact' };
+
+    // Priority 4: General RAG
     return { type: 'general' };
 }
 
@@ -260,17 +251,14 @@ async function sendMessage() {
     addMessage('You', message);
     input.value = '';
 
-    // 🎯 Detect user intent
+    // 🎯 Detect intent
     const intent = detectIntent(message);
     console.log('🎯 Detected Intent:', intent);
 
-    // Handle based on intent type
     switch (intent.type) {
+
         case 'sub_service':
-            // Show specific service details
-            const serviceDetails = subServiceMap[intent.service];
-            addMessage('Bot', serviceDetails);
-            
+            addMessage('Bot', subServiceMap[intent.service]);
             setTimeout(() => {
                 addMessage('Bot', "Want to discuss your specific needs? I can connect you with our team 👇");
                 addEnquireButton();
@@ -278,29 +266,29 @@ async function sendMessage() {
             break;
 
         case 'services_list':
-            // Show main services list
-            console.log("✅ Showing FULL SERVICES LIST");
             addMessage('Bot', servicesList);
-            
             setTimeout(() => {
                 addMessage('Bot', "Which service interests you the most? Just type the name (like 'Digital Marketing' or 'Creative Services') and I'll share the details! 😊");
             }, 600);
             break;
 
         case 'pricing_contact':
-            // Show pricing/contact message
-            addMessage('Bot', "I'd love to help! Our pricing is customized based on your specific needs. Let me connect you with our team for a detailed discussion 👇");
-            
-            setTimeout(() => {
-                addEnquireButton();
-            }, 400);
+            addMessage('Bot', "Our pricing is fully customized based on your goals and industry. Let me connect you with our team for a detailed proposal 👇");
+            setTimeout(() => addEnquireButton(), 400);
             break;
 
         case 'general':
         default:
-            // Query RAG backend for general questions
+            // ⚡ Timeout-protected RAG call
             const typingIndicator = addMessage('Bot', '', true);
-            
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                controller.abort();
+                typingIndicator.remove();
+                addMessage('Bot', "⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n📞 +91-7290002168");
+            }, 8000);
+
             try {
                 const res = await fetch('/v1/chat', {
                     method: 'POST',
@@ -308,25 +296,30 @@ async function sendMessage() {
                     body: JSON.stringify({ 
                         message: message,
                         session_id: null 
-                    })
+                    }),
+                    signal: controller.signal
                 });
-                
+
+                clearTimeout(timeoutId);
                 const data = await res.json();
                 typingIndicator.remove();
-                
+
                 addMessage('Bot', data.answer, false, data.sources || []);
-                
-                // Show enquiry button if RAG answer mentions contact/pricing
-                if (!leadShown && shouldShowLeadForm(data.answer)) {
+
+                if (!leadShown && shouldShowLeadForm(data.answer || message)) {
                     setTimeout(() => {
                         addMessage('Bot', "Want to discuss this further? I can connect you with our team 👇");
                         addEnquireButton();
                     }, 500);
                 }
+
             } catch (err) {
-                console.error('❌ Chat Error:', err);
-                typingIndicator.remove();
-                addMessage('Bot', 'Sorry, something went wrong. Please try again or contact us directly at +91-7290002168');
+                clearTimeout(timeoutId);
+                if (err.name !== 'AbortError') {
+                    console.error('❌ Chat Error:', err);
+                    typingIndicator.remove();
+                    addMessage('Bot', '⚠️ Something went wrong. Please try again or contact us:\n📞 +91-7290002168\n📧 info@ritzmediaworld.com');
+                }
             }
             break;
     }
@@ -343,7 +336,6 @@ function addMessage(sender, text, isTyping = false, sources = []) {
     } else {
         msg.textContent = text;
 
-        // Add to history (keep last 6 messages)
         if (!isTyping && text) {
             chatHistory.push({ role: sender === 'You' ? 'user' : 'assistant', content: text });
             if (chatHistory.length > 6) chatHistory.shift();
@@ -400,11 +392,9 @@ function openLeadModal() {
     formWrapper.innerHTML = `
         <div class="lead-content">
             <h3>Share your details</h3>
-            
             <input id="leadName" placeholder="Name *" />
             <input id="leadPhone" placeholder="Phone Number *" />
             <input id="leadEmail" placeholder="Email Address *" />
-            
             <select id="leadService">
                 <option value="">Select Service *</option>
                 <option>Digital Marketing</option>
@@ -416,11 +406,8 @@ function openLeadModal() {
                 <option>Celebrity Endorsements</option>
                 <option>Influencer Marketing</option>
             </select>
-            
             <textarea id="leadMsg" placeholder="Message (optional)"></textarea>
-            
             <p id="leadError" class="lead-error"></p>
-            
             <div class="lead-buttons">
                 <button onclick="submitLead()">Submit</button>
                 <button onclick="closeLeadModal()">Cancel</button>
@@ -489,8 +476,6 @@ async function submitLead() {
         if (result.success) {
             closeLeadModal();
             addMessage("Bot", "✅ Thanks! Our team will reach out soon 🙂");
-
-            // Reset form
             document.getElementById("leadName").value = "";
             document.getElementById("leadPhone").value = "";
             document.getElementById("leadEmail").value = "";
@@ -514,10 +499,9 @@ document.getElementById('user-input')
 // ================= AUTO WELCOME =================
 window.addEventListener("load", () => {
     const typing = addMessage('Bot', '', true);
-
     setTimeout(() => {
         typing.remove();
-        addMessage('Bot', 
+        addMessage('Bot',
             `Hello 👋 I'm Ruby.
 Welcome to Ritz Media World.
 
