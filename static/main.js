@@ -13,6 +13,51 @@ function shouldShowLeadForm(msg) {
     return leadKeywords.some(k => text.includes(k));
 }
 
+// ================= INTENT DETECTION ENGINE =================
+const intentPatterns = {
+    // Services list intent (catches ALL variations)
+    servicesList: [
+        'service', 'services',
+        'what do you do', 'what do you offer', 'what you do', 'what you offer',
+        'what can you', 'what are your',
+        'tell me about', 'tell me more',
+        'list', 'details', 'offerings',
+        'how can you help', 'help me with',
+        'your company', 'about ritz', 'about you',
+        'all service', 'complete service',
+        'show me', 'available service'
+    ]
+};
+
+// Intent detection function
+function detectIntent(message) {
+    const lower = message.toLowerCase();
+    
+    // 1. Check for sub-services FIRST (highest priority)
+    for (const key in subServiceMap) {
+        if (lower.includes(key)) {
+            return { type: 'sub_service', service: key };
+        }
+    }
+    
+    // 2. Check for services list (comprehensive check)
+    const hasServiceIntent = intentPatterns.servicesList.some(pattern => 
+        lower.includes(pattern)
+    );
+    
+    if (hasServiceIntent) {
+        return { type: 'services_list' };
+    }
+    
+    // 3. Check for pricing/contact intent
+    if (shouldShowLeadForm(message)) {
+        return { type: 'pricing_contact' };
+    }
+    
+    // 4. Default: general query (goes to RAG backend)
+    return { type: 'general' };
+}
+
 // ================= MAIN SERVICES LIST =================
 const servicesList = `Here are all the services we offer:
 
@@ -204,17 +249,6 @@ We partner with the right influencers to reach your target audience authenticall
 We partner with the right influencers to reach your target audience authentically.`
 };
 
-// ================= HELPERS =================
-function checkSubServices(message) {
-    const text = message.toLowerCase();
-    for (const key in subServiceMap) {
-        if (text.includes(key)) {
-            return subServiceMap[key];
-        }
-    }
-    return null;
-}
-
 // ================= CHAT FUNCTION ================= 
 let chatHistory = [];
 
@@ -226,66 +260,77 @@ async function sendMessage() {
     addMessage('You', message);
     input.value = '';
 
-    const lower = message.toLowerCase();
+    // 🎯 Detect user intent
+    const intent = detectIntent(message);
+    console.log('🎯 Detected Intent:', intent);
 
-    // ✅ PRIORITY 1: CHECK SUB-SERVICES FIRST
-    const sub = checkSubServices(message);
-    if (sub) {
-        addMessage('Bot', sub);
-        setTimeout(() => {
-            addMessage('Bot', "Want to discuss your specific needs? I can connect you with our team 👇");
-            addEnquireButton();
-        }, 500);
-        return;
-    }
-
-    // ✅ PRIORITY 2: MAIN SERVICES LIST (improved keyword detection)
-    const serviceKeywords = ['what services', 'your services', 'all services', 'what do you offer', 'what can you do', 'tell me about your service', 'what you offer', 'what you provide'];
-    const containsServiceKeyword = serviceKeywords.some(keyword => lower.includes(keyword));
-    
-    // Also match single words "services" or "service" if message is short (likely asking for list)
-    const isShortServiceQuery = (lower === 'services' || lower === 'service');
-    
-    if (containsServiceKeyword || isShortServiceQuery) {
-        addMessage('Bot', servicesList);
-        
-        setTimeout(() => {
-            addMessage('Bot', "Which service interests you the most? Just type the name (like 'Digital Marketing' or 'Web Development') and I'll share the details! 😊");
-        }, 600);
-        return;
-    }
-
-    // ✅ PRIORITY 3: BACKEND RAG CHAT
-    const typingIndicator = addMessage('Bot', '', true);
-    
-    try {
-        const res = await fetch('/v1/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                message: message,
-                session_id: null 
-            })
-        });
-        
-        const data = await res.json();
-        typingIndicator.remove();
-        
-        addMessage('Bot', data.answer, false, data.sources || []);
-        
-        if (shouldShowLeadForm(message) && !leadShown) {
+    // Handle based on intent type
+    switch (intent.type) {
+        case 'sub_service':
+            // Show specific service details
+            const serviceDetails = subServiceMap[intent.service];
+            addMessage('Bot', serviceDetails);
+            
             setTimeout(() => {
-                addMessage('Bot', "Want to discuss this further? I can connect you with our team 👇");
+                addMessage('Bot', "Want to discuss your specific needs? I can connect you with our team 👇");
                 addEnquireButton();
             }, 500);
-        }
-    } catch (err) {
-        console.error(err);
-        typingIndicator.remove();
-        addMessage('Bot', 'Sorry, something went wrong. Please try again.');
+            break;
+
+        case 'services_list':
+            // Show main services list
+            console.log("✅ Showing FULL SERVICES LIST");
+            addMessage('Bot', servicesList);
+            
+            setTimeout(() => {
+                addMessage('Bot', "Which service interests you the most? Just type the name (like 'Digital Marketing' or 'Creative Services') and I'll share the details! 😊");
+            }, 600);
+            break;
+
+        case 'pricing_contact':
+            // Show pricing/contact message
+            addMessage('Bot', "I'd love to help! Our pricing is customized based on your specific needs. Let me connect you with our team for a detailed discussion 👇");
+            
+            setTimeout(() => {
+                addEnquireButton();
+            }, 400);
+            break;
+
+        case 'general':
+        default:
+            // Query RAG backend for general questions
+            const typingIndicator = addMessage('Bot', '', true);
+            
+            try {
+                const res = await fetch('/v1/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        message: message,
+                        session_id: null 
+                    })
+                });
+                
+                const data = await res.json();
+                typingIndicator.remove();
+                
+                addMessage('Bot', data.answer, false, data.sources || []);
+                
+                // Show enquiry button if RAG answer mentions contact/pricing
+                if (!leadShown && shouldShowLeadForm(data.answer)) {
+                    setTimeout(() => {
+                        addMessage('Bot', "Want to discuss this further? I can connect you with our team 👇");
+                        addEnquireButton();
+                    }, 500);
+                }
+            } catch (err) {
+                console.error('❌ Chat Error:', err);
+                typingIndicator.remove();
+                addMessage('Bot', 'Sorry, something went wrong. Please try again or contact us directly at +91-7290002168');
+            }
+            break;
     }
 }
-
 
 // ================= MESSAGE UI =================
 function addMessage(sender, text, isTyping = false, sources = []) {
