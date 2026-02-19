@@ -31,6 +31,7 @@ app.add_middleware(
         "https://ritzmediaworld.com",
         "https://www.ritzmediaworld.com",
         "https://chatbot.ritzmediaworld.com",
+        "https://chatbot.ritzmediaworld.com/v1/chat",
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
