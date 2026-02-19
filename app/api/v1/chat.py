@@ -24,7 +24,6 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
     POST /v1/chat — with caching + 8s timeout
     """
     try:
-        # ✅ Cache check (instant for repeated questions)
         cache_key = get_cache_key(req.message)
         if cache_key in _cache:
             logger.info(f"⚡ Cache hit: {req.message[:50]}")

@@ -27,17 +27,10 @@ app = FastAPI(
 # ✅ CORS MIDDLEWARE - Fix CORS errors in production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://ritzmediaworld.com",
-        "https://www.ritzmediaworld.com",
-        "https://chatbot.ritzmediaworld.com",
-        "https://chatbot.ritzmediaworld.com/v1/chat",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
-    expose_headers=["Content-Type", "Authorization"],
-    max_age=3600,
+    allow_origins=["*"],   # <-- change this
+    allow_credentials=False,  # must be False when using "*"
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Serve static files from the "static" directory
