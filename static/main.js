@@ -13,6 +13,15 @@ function shouldShowLeadForm(msg) {
     return leadKeywords.some(k => text.includes(k));
 }
 
+// ================= INPUT NORMALIZER =================
+function normalizeInput(text) {
+    return text
+        .toLowerCase()
+        .replace(/[,\.\-\_\/]/g, ' ')  // Replace commas, dots, slashes, dashes with space
+        .replace(/\s+/g, ' ')           // Collapse multiple spaces
+        .trim();
+}
+
 // ================= INTENT DETECTION ENGINE =================
 const intentPatterns = {
     servicesList: [
@@ -30,15 +39,23 @@ const intentPatterns = {
 
 function detectIntent(message) {
     const lower = message.toLowerCase();
+    const normalized = normalizeInput(message);
 
-    // Priority 1: Sub-services
+    // Priority 1: Sub-services FIRST (before anything else)
     for (const key in subServiceMap) {
+        // Check original lowercase input
         if (lower.includes(key)) {
+            return { type: 'sub_service', service: key };
+        }
+        // Check normalized input (catches ui,ux → ui ux, seo/ppc etc.)
+        const normalizedKey = normalizeInput(key);
+        if (normalized.includes(normalizedKey)) {
             return { type: 'sub_service', service: key };
         }
     }
 
     // Priority 2: Services list
+    // Only show full list if NO specific sub-service matched
     const hasServiceIntent = intentPatterns.servicesList.some(p => lower.includes(p));
     if (hasServiceIntent) return { type: 'services_list' };
 
@@ -63,6 +80,8 @@ const servicesList = `Here are all the services we offer:
 
 // ================= SUB SERVICE MAP ================= 
 const subServiceMap = {
+
+    // ===== DIGITAL MARKETING =====
     "digital marketing": `✨ Digital Marketing Services:
 
 1️⃣ SEO (Search Engine Optimization)
@@ -72,6 +91,87 @@ const subServiceMap = {
 5️⃣ Brand Awareness
 
 Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "seo": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "ppc": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "google ads": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "social media": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "orm": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "lead generation": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    "brand awareness": `✨ Digital Marketing Services:
+
+1️⃣ SEO (Search Engine Optimization)
+2️⃣ PPC (Google Ads)
+3️⃣ Social Media Management & ORM
+4️⃣ Lead Generation
+5️⃣ Brand Awareness
+
+Each service is customized to your brand's goals. Want to know more about any of these?`,
+
+    // ===== CREATIVE SERVICES =====
+    "creative services": `🎨 Creative Services:
+
+1️⃣ Branding & Identity Development
+2️⃣ Graphic Design
+3️⃣ Logo Design
+4️⃣ Print Advertising Design
+5️⃣ Packaging Design
+
+We bring your brand vision to life through strategic design.`,
 
     "creative": `🎨 Creative Services:
 
@@ -83,7 +183,7 @@ Each service is customized to your brand's goals. Want to know more about any of
 
 We bring your brand vision to life through strategic design.`,
 
-    "creative services": `🎨 Creative Services:
+    "branding": `🎨 Creative Services:
 
 1️⃣ Branding & Identity Development
 2️⃣ Graphic Design
@@ -93,6 +193,37 @@ We bring your brand vision to life through strategic design.`,
 
 We bring your brand vision to life through strategic design.`,
 
+    "logo": `🎨 Creative Services:
+
+1️⃣ Branding & Identity Development
+2️⃣ Graphic Design
+3️⃣ Logo Design
+4️⃣ Print Advertising Design
+5️⃣ Packaging Design
+
+We bring your brand vision to life through strategic design.`,
+
+    "graphic": `🎨 Creative Services:
+
+1️⃣ Branding & Identity Development
+2️⃣ Graphic Design
+3️⃣ Logo Design
+4️⃣ Print Advertising Design
+5️⃣ Packaging Design
+
+We bring your brand vision to life through strategic design.`,
+
+    "packaging": `🎨 Creative Services:
+
+1️⃣ Branding & Identity Development
+2️⃣ Graphic Design
+3️⃣ Logo Design
+4️⃣ Print Advertising Design
+5️⃣ Packaging Design
+
+We bring your brand vision to life through strategic design.`,
+
+    // ===== PRINT ADVERTISING =====
     "print advertising": `📰 Print Advertising Services:
 
 1️⃣ Advertisement Design
@@ -115,6 +246,18 @@ We handle everything from design to placement in top publications.`,
 
 We handle everything from design to placement in top publications.`,
 
+    "copywriting": `📰 Print Advertising Services:
+
+1️⃣ Advertisement Design
+2️⃣ Ad Placement (Newspapers, Magazines)
+3️⃣ Copywriting
+4️⃣ Media Buying & Cost Negotiation
+5️⃣ Ad Size Optimization
+6️⃣ Campaign Scheduling
+
+We handle everything from design to placement in top publications.`,
+
+    // ===== RADIO ADVERTISING =====
     "radio advertising": `📻 Radio Advertising Services:
 
 1️⃣ Advertising Concept Development
@@ -137,6 +280,29 @@ From script to broadcast, we create radio campaigns that capture attention.`,
 
 From script to broadcast, we create radio campaigns that capture attention.`,
 
+    "scriptwriting": `📻 Radio Advertising Services:
+
+1️⃣ Advertising Concept Development
+2️⃣ Scriptwriting
+3️⃣ Voiceover Casting
+4️⃣ Recording & Production
+5️⃣ Media Planning & Buying
+6️⃣ Cost Negotiations
+
+From script to broadcast, we create radio campaigns that capture attention.`,
+
+    "voiceover": `📻 Radio Advertising Services:
+
+1️⃣ Advertising Concept Development
+2️⃣ Scriptwriting
+3️⃣ Voiceover Casting
+4️⃣ Recording & Production
+5️⃣ Media Planning & Buying
+6️⃣ Cost Negotiations
+
+From script to broadcast, we create radio campaigns that capture attention.`,
+
+    // ===== CONTENT MARKETING =====
     "content marketing": `📝 Content Marketing Services:
 
 1️⃣ Customized Content Strategy
@@ -155,6 +321,34 @@ We craft content that tells your brand story and drives engagement.`,
 
 We craft content that tells your brand story and drives engagement.`,
 
+    "email marketing": `📝 Content Marketing Services:
+
+1️⃣ Customized Content Strategy
+2️⃣ Email & Newsletter Marketing
+3️⃣ Asset Creation & Infographics
+4️⃣ Content Promotion & Optimization
+
+We craft content that tells your brand story and drives engagement.`,
+
+    "newsletter": `📝 Content Marketing Services:
+
+1️⃣ Customized Content Strategy
+2️⃣ Email & Newsletter Marketing
+3️⃣ Asset Creation & Infographics
+4️⃣ Content Promotion & Optimization
+
+We craft content that tells your brand story and drives engagement.`,
+
+    "infographic": `📝 Content Marketing Services:
+
+1️⃣ Customized Content Strategy
+2️⃣ Email & Newsletter Marketing
+3️⃣ Asset Creation & Infographics
+4️⃣ Content Promotion & Optimization
+
+We craft content that tells your brand story and drives engagement.`,
+
+    // ===== WEB DEVELOPMENT =====
     "web development": `💻 Web Development Services:
 
 1️⃣ UI/UX Design
@@ -195,6 +389,77 @@ We build high-converting digital experiences, not just websites.`,
 
 We build high-converting digital experiences, not just websites.`,
 
+    "ui ux": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "ux": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "wordpress": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "ecommerce": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "e-commerce": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "landing page": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    "website": `💻 Web Development Services:
+
+1️⃣ UI/UX Design
+2️⃣ Custom Website Design & Development
+3️⃣ E-Commerce Website Development
+4️⃣ Landing Page Development
+5️⃣ WordPress Web Design
+
+We build high-converting digital experiences, not just websites.`,
+
+    // ===== CELEBRITY ENDORSEMENTS =====
     "celebrity endorsements": `⭐ Celebrity Endorsement Services:
 
 1️⃣ Celebrity Identification & Selection
@@ -217,6 +482,18 @@ We connect your brand with the right celebrity to amplify your message.`,
 
 We connect your brand with the right celebrity to amplify your message.`,
 
+    "endorsement": `⭐ Celebrity Endorsement Services:
+
+1️⃣ Celebrity Identification & Selection
+2️⃣ Contract Negotiations
+3️⃣ Creative Collaboration
+4️⃣ Campaign Integration
+5️⃣ Public Relations Management
+6️⃣ Legal Compliance
+
+We connect your brand with the right celebrity to amplify your message.`,
+
+    // ===== INFLUENCER MARKETING =====
     "influencer marketing": `📱 Influencer Marketing Services:
 
 1️⃣ Influencer Identification & Vetting
@@ -239,6 +516,25 @@ We partner with the right influencers to reach your target audience authenticall
 
 We partner with the right influencers to reach your target audience authentically.`
 };
+
+// ================= HELPERS =================
+function checkSubServices(message) {
+    const lower = message.toLowerCase();
+    const normalized = normalizeInput(message);
+
+    // Check original keys first
+    for (const key in subServiceMap) {
+        if (lower.includes(key)) return subServiceMap[key];
+    }
+
+    // Check normalized input (catches ui,ux / ui-ux / seo,ppc etc.)
+    for (const key in subServiceMap) {
+        const normalizedKey = normalizeInput(key);
+        if (normalized.includes(normalizedKey)) return subServiceMap[key];
+    }
+
+    return null;
+}
 
 // ================= CHAT FUNCTION ================= 
 let chatHistory = [];
@@ -279,7 +575,6 @@ async function sendMessage() {
 
         case 'general':
         default:
-            // ⚡ Timeout-protected RAG call
             const typingIndicator = addMessage('Bot', '', true);
 
             const controller = new AbortController();
@@ -287,7 +582,7 @@ async function sendMessage() {
                 controller.abort();
                 typingIndicator.remove();
                 addMessage('Bot', "⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n📞 +91-7290002168");
-            }, 8000);
+            }, 12000);
 
             try {
                 const res = await fetch('/v1/chat', {
