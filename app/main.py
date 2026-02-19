@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.chat import router as chat_router
 from app.api.v1.leads import router as leads_router  # ✅ NEW IMPORT
@@ -21,6 +22,15 @@ app = FastAPI(
     title="Strict RAG Chatbot API",
     version="0.1.0",
     debug=True,  # Enable debug mode
+)
+
+# ✅ CORS MIDDLEWARE - Fix CORS errors in production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins in production (can be restricted to your domain)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],  # Allow all headers
 )
 
 # Serve static files from the "static" directory
