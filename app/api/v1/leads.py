@@ -1,9 +1,10 @@
 # app/api/v1/leads.py
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
 import logging
 import httpx
 import re
+from typing import Optional, List
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -58,6 +59,143 @@ class LeadRequest(BaseModel):
             raise ValueError('Please use a valid email address')
         
         return email_lower
+
+
+# ================= NEW ENDPOINTS =================
+
+class FormField(BaseModel):
+    id: str
+    label: str
+    type: str
+    placeholder: str
+    required: bool = True
+    options: Optional[List[str]] = None
+
+
+class FormSchemaResponse(BaseModel):
+    fields: List[FormField]
+    services: List[str]
+
+
+@router.get("/form-schema", response_model=FormSchemaResponse)
+async def get_form_schema():
+    """
+    GET /submit-lead/form-schema
+    Returns the structure of the lead form
+    """
+    services = [
+        "Digital Marketing",
+        "Creative Services",
+        "Print Advertising",
+        "Radio Advertising",
+        "Content Marketing",
+        "Web Development",
+        "Celebrity Endorsements",
+        "Influencer Marketing"
+    ]
+    
+    fields = [
+        FormField(
+            id="name",
+            label="Name",
+            type="text",
+            placeholder="Name *",
+            required=True
+        ),
+        FormField(
+            id="phone",
+            label="Phone Number",
+            type="tel",
+            placeholder="Phone Number *",
+            required=True
+        ),
+        FormField(
+            id="email",
+            label="Email Address",
+            type="email",
+            placeholder="Email Address *",
+            required=True
+        ),
+        FormField(
+            id="service",
+            label="Service",
+            type="select",
+            placeholder="Select Service *",
+            required=True,
+            options=services
+        ),
+        FormField(
+            id="message",
+            label="Message",
+            type="textarea",
+            placeholder="Message (optional)",
+            required=False
+        )
+    ]
+    
+    return FormSchemaResponse(fields=fields, services=services)
+
+
+class ValidationRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    service: Optional[str] = None
+
+
+class ValidationResponse(BaseModel):
+    valid: bool
+    errors: dict = {}
+
+
+@router.post("/validate", response_model=ValidationResponse)
+async def validate_lead(data: ValidationRequest):
+    """
+    POST /submit-lead/validate
+    Validates individual form fields and returns errors
+    """
+    errors = {}
+    
+    # Validate name
+    if data.name is not None:
+        if len(data.name.strip()) < 3:
+            errors['name'] = "Name must have at least 3 letters"
+        elif not re.match(r'^[a-zA-Z\s]+$', data.name):
+            errors['name'] = "Name must contain only letters"
+    
+    # Validate phone
+    if data.phone is not None:
+        clean_phone = re.sub(r'[^\d]', '', data.phone)
+        if len(clean_phone) != 10:
+            errors['phone'] = "Phone must be exactly 10 digits"
+        elif clean_phone[0] not in ['6', '7', '8', '9']:
+            errors['phone'] = "Phone must start with 6, 7, 8, or 9"
+    
+    # Validate email
+    if data.email is not None:
+        email_pattern = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
+        if not re.match(email_pattern, data.email):
+            errors['email'] = "Invalid email format"
+        else:
+            blocked_domains = ['test.com', 'example.com', 'fake.com', 'dummy.com']
+            domain = data.email.split('@')[1].lower()
+            if domain in blocked_domains:
+                errors['email'] = "Please use a valid email address"
+    
+    # Validate service
+    if data.service is not None:
+        valid_services = [
+            "Digital Marketing", "Creative Services", "Print Advertising",
+            "Radio Advertising", "Content Marketing", "Web Development",
+            "Celebrity Endorsements", "Influencer Marketing"
+        ]
+        if data.service not in valid_services:
+            errors['service'] = "Please select a valid service"
+    
+    return ValidationResponse(
+        valid=len(errors) == 0,
+        errors=errors
+    )
 
 @router.post("/submit-lead")
 async def submit_lead(lead: LeadRequest):

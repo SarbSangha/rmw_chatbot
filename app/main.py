@@ -8,7 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.chat import router as chat_router
-from app.api.v1.leads import router as leads_router  # ✅ NEW IMPORT
+from app.api.v1.leads import router as leads_router
+from app.api.v1.ui import router as ui_router
 
 # Enable detailed logging
 logging.basicConfig(level=logging.DEBUG)
@@ -51,7 +52,10 @@ async def catch_exceptions_middleware(request: Request, call_next):
 app.include_router(chat_router)
 
 # Include the leads router (no prefix so /submit-lead works directly)
-app.include_router(leads_router)  # ✅ NEW ROUTER
+app.include_router(leads_router)
+
+# Include the UI router
+app.include_router(ui_router)
 
 @app.get("/")
 async def root():
