@@ -32,7 +32,7 @@ class MessageResponse(BaseModel):
     intent: str
     show_lead_form: bool = False
     follow_up: Optional[str] = None
-    sources: Optional[list] = None
+    enquiry_message: Optional[str] = None
 
 
 # ================= NEW ENDPOINT WITH INTENT DETECTION =================
@@ -43,46 +43,71 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
     Handles intent detection and returns structured response
     """
     try:
+        logger.info(f"📨 /v1/message received: {req.message[:80]}")
+        
         # Check if intent engine can handle it
         intent_response = get_intent_response(req.message)
         
         if intent_response:
             # Intent matched - return predefined response
+            logger.info(f"🎯 Intent matched: {intent_response.get('intent')}")
             return MessageResponse(
                 answer=intent_response["answer"],
                 intent=intent_response["intent"],
                 show_lead_form=intent_response["show_lead_form"],
                 follow_up=intent_response.get("follow_up"),
+                enquiry_message=intent_response.get("enquiry_message"),
             )
+        
+        logger.info(f"🔄 No intent match, routing to RAG...")
         
         # Intent type is "general" - use RAG
         cache_key = get_cache_key(req.message)
         if cache_key in _cache:
             logger.info(f"⚡ Cache hit: {req.message[:50]}")
-            return MessageResponse(
-                answer=_cache[cache_key],
-                intent="general",
-                show_lead_form=False,
-                follow_up=None,  # No follow-up for normal conversation
-            )
+            cached = _cache[cache_key]
+            # cached expected to be dict with answer and optional sources
+            if isinstance(cached, dict):
+                return MessageResponse(
+                    answer=cached.get('answer'),
+                    intent="general",
+                    show_lead_form=False,
+                    follow_up=None,
+                    enquiry_message=None,
+                )
+            else:
+                return MessageResponse(
+                    answer=cached,
+                    intent="general",
+                    show_lead_form=False,
+                    follow_up=None,
+                    enquiry_message=None,
+                )
 
         # Run with 12s timeout
         loop = asyncio.get_event_loop()
-        answer = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             loop.run_in_executor(None, run_chat, req.message),
             timeout=12.0
         )
 
-        # Store in cache
+        # Extract answer from result dict
+        answer = result.get("answer")
+        has_answer = result.get("has_answer", False)
+        
+        logger.info(f"✅ RAG result: has_answer={has_answer}, answer starts with: {answer[:100] if answer else 'None'}")
+
+        # Store answer in cache
         if len(_cache) >= 50:
             del _cache[next(iter(_cache))]
-        _cache[cache_key] = answer
+        _cache[cache_key] = {"answer": answer}
 
         return MessageResponse(
             answer=answer,
             intent="general",
             show_lead_form=False,
-            follow_up=None,  # No follow-up for normal conversation
+            follow_up=None,
+            enquiry_message=None,  # No enquiry message for normal RAG conversation
         )
 
     except asyncio.TimeoutError:
@@ -121,10 +146,13 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
 
         # ✅ Run with 8s timeout (prevents hanging)
         loop = asyncio.get_event_loop()
-        answer = await asyncio.wait_for(
+        result = await asyncio.wait_for(
             loop.run_in_executor(None, run_chat, req.message),
             timeout=12.0
         )
+
+        # Extract answer from result dict
+        answer = result["answer"]
 
         # ✅ Store in cache (evict oldest if full)
         if len(_cache) >= 50:

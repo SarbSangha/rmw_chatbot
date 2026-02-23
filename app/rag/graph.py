@@ -19,17 +19,17 @@ class RAGState(TypedDict):
     answer: str
 
 
-# ✅ LangChain wrapper with max_retries=0
+# ✅ LangChain wrapper with optimized parameters for direct responses
 _llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash-lite",
+    model="gemini-2.5-flash",
     google_api_key=settings.GEMINI_API_KEY,
-    temperature=0,
-    max_output_tokens=400,
-    top_p=0.8,
+    temperature=0.3,  # Slightly higher to avoid over-cautious responses
+    max_output_tokens=500,  # Increased for better answers
+    top_p=0.95,  # More permissive
     top_k=40,
     convert_system_message_to_human=True,
-    max_retries=0,        # ✅ No retrying
-    request_timeout=10,    # ✅ Hard 6s timeout
+    max_retries=0,
+    request_timeout=10,
 )
 
 _retriever = get_retriever(k=3)
@@ -39,23 +39,19 @@ _retriever = get_retriever(k=3)
 
 def retrieve_node(state: RAGState) -> RAGState:
     try:
-        docs = _retriever.invoke(state["question"])
-        logger.info(f"📚 Retrieved {len(docs)} docs for: {state['question'][:50]}")
-        return {**state, "docs": docs}
+        # Fetch internal docs from vectorstore only (no web retrieval)
+        docs = _retriever.invoke(state["question"]) or []
+        logger.info(f"📚 Retrieved {len(docs)} internal docs for: {state['question'][:50]}")
+        return {**state, "docs": list(docs)}
     except Exception as e:
         logger.error(f"❌ Retrieval error: {e}")
         return {**state, "docs": []}
 
 
 def strict_guard_node(state: RAGState) -> RAGState:
-    if len(state["docs"]) == 0:
-        return {
-            **state,
-            "answer": (
-                "I can only help with information about Ritz Media World. "
-                "Ask me about our services, team, or capabilities! 😊"
-            )
-        }
+    # Previously this node blocked generation when no docs were found.
+    # Allow generation in all cases so web snippets or the model's knowledge
+    # can be used to craft a professional answer.
     return state
 
 
@@ -87,6 +83,8 @@ def answer_node(state: RAGState) -> RAGState:
             answer_text = str(resp)
 
         answer_text = answer_text.strip()
+        
+        logger.info(f"🤖 Raw Gemini response: {answer_text[:200]}")
 
         if not answer_text:
             answer_text = (
@@ -95,7 +93,7 @@ def answer_node(state: RAGState) -> RAGState:
                 "📧 info@ritzmediaworld.com"
             )
 
-        logger.info(f"✅ Answer ready ({len(answer_text)} chars)")
+        logger.info(f"✅ Answer ready ({len(answer_text)} chars): {answer_text[:100]}")
         return {**state, "answer": answer_text}
 
     except Exception as e:
@@ -128,7 +126,8 @@ def answer_node(state: RAGState) -> RAGState:
 # ================= ROUTING =================
 
 def _guard_condition(state: RAGState) -> str:
-    return "reject" if state.get("answer") else "ok"
+    # Always proceed to generation; the answer node will handle empty context.
+    return "ok"
 
 
 # ================= GRAPH =================

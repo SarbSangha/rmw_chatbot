@@ -66,7 +66,7 @@ async function sendMessage() {
         typingIndicator.remove();
 
         // Display main answer
-        addMessage('Bot', data.answer, false, data.sources || []);
+        addMessage('Bot', data.answer);
 
         // Handle follow-up message if needed
         if (data.follow_up) {
@@ -92,7 +92,7 @@ async function sendMessage() {
 
 
 // ================= MESSAGE UI =================
-function addMessage(sender, text, isTyping = false, sources = []) {
+function addMessage(sender, text, isTyping = false) {
     const chatBox = document.getElementById('chat-box');
     const msg = document.createElement('div');
     msg.className = 'message ' + (sender === 'You' ? 'user-message' : 'bot-message');
@@ -107,12 +107,7 @@ function addMessage(sender, text, isTyping = false, sources = []) {
             if (chatHistory.length > 6) chatHistory.shift();
         }
 
-        if (sources.length > 0) {
-            const sourceDiv = document.createElement('div');
-            sourceDiv.className = 'bot-source';
-            sourceDiv.textContent = `Source: ${sources.join(' | ')}`;
-            msg.appendChild(sourceDiv);
-        }
+        // Do not display source metadata in the chat UI.
     }
 
     chatBox.appendChild(msg);
