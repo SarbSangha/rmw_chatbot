@@ -21,6 +21,19 @@ def get_cache_key(message: str) -> str:
     return hashlib.md5(message.strip().lower().encode()).hexdigest()
 
 
+def _extract_answer_from_cache(cached: object) -> str:
+    """
+    Normalize cache payload across endpoints.
+    Cache entries may be plain strings (legacy) or dicts like {"answer": "..."}.
+    """
+    if isinstance(cached, dict):
+        value = cached.get("answer", "")
+        return value if isinstance(value, str) else str(value)
+    if isinstance(cached, str):
+        return cached
+    return str(cached) if cached is not None else ""
+
+
 # ================= NEW REQUEST/RESPONSE MODELS =================
 class MessageRequest(BaseModel):
     message: str
@@ -65,24 +78,14 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
         cache_key = get_cache_key(req.message)
         if cache_key in _cache:
             logger.info(f"⚡ Cache hit: {req.message[:50]}")
-            cached = _cache[cache_key]
-            # cached expected to be dict with answer and optional sources
-            if isinstance(cached, dict):
-                return MessageResponse(
-                    answer=cached.get('answer'),
-                    intent="general",
-                    show_lead_form=False,
-                    follow_up=None,
-                    enquiry_message=None,
-                )
-            else:
-                return MessageResponse(
-                    answer=cached,
-                    intent="general",
-                    show_lead_form=False,
-                    follow_up=None,
-                    enquiry_message=None,
-                )
+            answer = _extract_answer_from_cache(_cache[cache_key])
+            return MessageResponse(
+                answer=answer,
+                intent="general",
+                show_lead_form=False,
+                follow_up=None,
+                enquiry_message=None,
+            )
 
         # Run with 12s timeout
         loop = asyncio.get_event_loop()
@@ -93,14 +96,17 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
 
         # Extract answer from result dict
         answer = result.get("answer")
+        if not isinstance(answer, str):
+            answer = str(answer) if answer is not None else ""
         has_answer = result.get("has_answer", False)
         
         logger.info(f"✅ RAG result: has_answer={has_answer}, answer starts with: {answer[:100] if answer else 'None'}")
 
-        # Store answer in cache
-        if len(_cache) >= 50:
-            del _cache[next(iter(_cache))]
-        _cache[cache_key] = {"answer": answer}
+        # Cache only meaningful answers, not fallback error text.
+        if has_answer:
+            if len(_cache) >= 50:
+                del _cache[next(iter(_cache))]
+            _cache[cache_key] = {"answer": answer}
 
         return MessageResponse(
             answer=answer,
@@ -142,7 +148,8 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
         cache_key = get_cache_key(req.message)
         if cache_key in _cache:
             logger.info(f"⚡ Cache hit: {req.message[:50]}")
-            return ChatResponse(answer=_cache[cache_key])
+            answer = _extract_answer_from_cache(_cache[cache_key])
+            return ChatResponse(answer=answer)
 
         # ✅ Run with 8s timeout (prevents hanging)
         loop = asyncio.get_event_loop()
@@ -152,12 +159,16 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
         )
 
         # Extract answer from result dict
-        answer = result["answer"]
+        answer = result.get("answer", "")
+        has_answer = bool(result.get("has_answer", False))
+        if not isinstance(answer, str):
+            answer = str(answer) if answer is not None else ""
 
-        # ✅ Store in cache (evict oldest if full)
-        if len(_cache) >= 50:
-            del _cache[next(iter(_cache))]
-        _cache[cache_key] = answer
+        # ✅ Store in cache only for successful answers.
+        if has_answer:
+            if len(_cache) >= 50:
+                del _cache[next(iter(_cache))]
+            _cache[cache_key] = {"answer": answer}
 
         return ChatResponse(answer=answer)
 

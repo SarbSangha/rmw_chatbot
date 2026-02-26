@@ -51,8 +51,8 @@ async def catch_exceptions_middleware(request: Request, call_next):
 # Include the chat router
 app.include_router(chat_router)
 
-# Include the leads router (no prefix so /submit-lead works directly)
-app.include_router(leads_router)
+# Include the leads router with /submit-lead prefix
+app.include_router(leads_router, prefix="/submit-lead")
 
 # Include the UI router
 app.include_router(ui_router)

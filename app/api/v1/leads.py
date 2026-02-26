@@ -197,7 +197,7 @@ async def validate_lead(data: ValidationRequest):
         errors=errors
     )
 
-@router.post("/submit-lead")
+@router.post("")
 async def submit_lead(lead: LeadRequest):
     """
     Forward lead submissions to RMW API endpoint
