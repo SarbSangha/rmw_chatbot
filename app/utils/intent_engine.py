@@ -97,6 +97,68 @@ SERVICES_LIST = """Here are all the services we offer:
 7️⃣ Celebrity Endorsements
 8️⃣ Influencer Marketing"""
 
+# ================= SELF-IDENTIFICATION PATTERNS =================
+# Patterns that trigger self-identification as Ritz Media World / RMW
+SELF_ID_PATTERNS = [
+    "who are you",
+    "what is your name",
+    "who is ruby",
+    "are you",
+    "your name",
+    "tell about yourself",
+    "about yourself",
+    "what company",
+    "which company",
+    "who is this",
+    "what brand",
+    "which brand",
+    "what organization",
+    "which organization",
+    "rits media",
+    "ritz media",
+    "ritzwmedia",
+    "rmw",
+    "ritzmediaworld",
+    "ritz media world"
+]
+
+SELF_ID_QUERY_CUES = [
+    "who are you",
+    "who is ruby",
+    "what is your name",
+    "your name",
+    "about yourself",
+    "tell about yourself",
+    "what company are you",
+    "which company are you",
+    "who is this",
+]
+
+SELF_ID_RESPONSE = """Hello! 👋 I'm Ruby, the AI assistant for Ritz Media World (RMW).
+
+We're a full-service marketing agency specializing in:
+✨ Digital Marketing (SEO, PPC, Social Media)
+🎨 Creative Services (Branding, Graphic Design)
+📰 Print & Radio Advertising
+💻 Web Development
+⭐ Celebrity & Influencer Marketing
+
+How can I help you today? 😊"""
+
+# ================= GREETINGS =================
+GREETING_PATTERNS = {
+    "hi", "hello", "hey", "hii", "helo", "yo", "good morning", "good afternoon", "good evening"
+}
+
+GREETING_RESPONSE = """Hi! 👋 I'm Ruby from Ritz Media World.
+
+I can help with:
+1) Services and capabilities
+2) Campaign ideas
+3) Pricing/contact support
+
+What would you like to explore?"""
+
 # ================= SUB SERVICE MAP =================
 SUB_SERVICE_MAP = {
     # ===== 8 MAIN SERVICES (NO DUPLICATES) =====
@@ -201,14 +263,42 @@ def is_external_query(message: str) -> bool:
     return False
 
 
+def is_self_identification_query(message: str) -> bool:
+    """
+    Keep self-id intent strict so brand-specific factual questions
+    (e.g., "ritz media founded in which year") still go to RAG.
+    """
+    normalized = normalize_input(message)
+
+    if any(cue in normalized for cue in SELF_ID_QUERY_CUES):
+        return True
+
+    # Brand mention alone is not enough. Require clear self-id phrasing.
+    if ("ritz media" in normalized or "ritz media world" in normalized or normalized == "rmw") and (
+        "who are" in normalized or "about you" in normalized or "your name" in normalized
+    ):
+        return True
+
+    return False
+
+
 def detect_intent(message: str) -> Dict[str, Any]:
     """Detect user intent from message"""
     lower = message.lower()
     normalized = normalize_input(message)
     
-    # FIRST: Check if this is an external query - if yes, skip all service matching
+    # FIRST: Check for self-identification (strict)
+    if is_self_identification_query(message):
+        logger.info("🏷️ Self-identification query matched")
+        return {"type": "self_id"}
+    
+    # SECOND: Check if this is an external query - if yes, skip all service matching
     if is_external_query(message):
         return {"type": "general"}
+
+    # THIRD: Lightweight greeting intent
+    if normalized in GREETING_PATTERNS:
+        return {"type": "greeting"}
 
     # Priority 1: Sub-services (only if NOT external query)
     for key in SUB_SERVICE_MAP.keys():
@@ -272,6 +362,24 @@ def get_intent_response(message: str) -> Dict[str, Any]:
             "answer": "Our pricing is fully customized based on your goals and industry. Let me connect you with our team for a detailed proposal 👇",
             "intent": "pricing_contact",
             "show_lead_form": True,
+            "follow_up": None,
+        }
+
+    elif intent["type"] == "self_id":
+        logger.info(f"🏷️ Self-identification response")
+        return {
+            "answer": SELF_ID_RESPONSE,
+            "intent": "self_id",
+            "show_lead_form": False,
+            "follow_up": None,
+        }
+
+    elif intent["type"] == "greeting":
+        logger.info("👋 Greeting response")
+        return {
+            "answer": GREETING_RESPONSE,
+            "intent": "greeting",
+            "show_lead_form": False,
             "follow_up": None,
         }
 

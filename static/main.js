@@ -2,6 +2,15 @@
 let chatConfig = {};
 let contactInfo = {};
 let formSchema = {};
+const developerContext = (window.RMW_DEV_CONTEXT || "").trim();
+const leadApiBase = '/v1/submit-lead';
+
+function scrollChatToBottom() {
+    const chatBox = document.getElementById('chat-box');
+    if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+}
 
 async function loadChatConfig() {
     try {
@@ -14,7 +23,7 @@ async function loadChatConfig() {
         contactInfo = await contactRes.json();
         
         // Load form schema from backend
-        const formRes = await fetch('/submit-lead/form-schema');
+        const formRes = await fetch(`${leadApiBase}/form-schema`);
         formSchema = await formRes.json();
         
         console.log('✅ Configuration loaded', { chatConfig, contactInfo, formSchema });
@@ -32,6 +41,7 @@ loadChatConfig();
 // ================= CHAT STATE =================
 let chatHistory = [];
 
+// Streaming version of sendMessage
 async function sendMessage() {
     const input = document.getElementById('user-input');
     const message = input.value.trim();
@@ -40,52 +50,114 @@ async function sendMessage() {
     addMessage('You', message);
     input.value = '';
 
-    const typingIndicator = addMessage('Bot', '', true);
+    // Create a message element for streaming response
+    const botMessageDiv = document.createElement('div');
+    botMessageDiv.className = 'message bot-message';
+    const chatBox = document.getElementById('chat-box');
+    chatBox.appendChild(botMessageDiv);
+    scrollChatToBottom();
+
     const controller = new AbortController();
     
     const timeoutId = setTimeout(() => {
         controller.abort();
-        typingIndicator.remove();
-        addMessage('Bot', `⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n📞 ${contactInfo.phone}`);
+        botMessageDiv.textContent += `\n\n⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n📞 ${contactInfo.phone}`;
     }, chatConfig.timeout_ms || 12000);
 
     try {
-        // Call backend message endpoint with intent detection
-        const res = await fetch('/v1/message', {
+        // Call streaming endpoint
+        const res = await fetch('/v1/message/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 message: message,
-                session_id: null 
+                session_id: null,
+                developer_context: developerContext,
             }),
             signal: controller.signal
         });
 
         clearTimeout(timeoutId);
-        const data = await res.json();
-        typingIndicator.remove();
 
-        // Display main answer
-        addMessage('Bot', data.answer);
-
-        // Handle follow-up message if needed
-        if (data.follow_up) {
-            setTimeout(() => {
-                addMessage('Bot', data.follow_up);
-            }, chatConfig.typing_indicator_delay || 500);
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
         }
 
-        // Show lead form button if needed
-        if (data.show_lead_form) {
-            setTimeout(() => addEnquireButton(), chatConfig.typing_indicator_delay || 400);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let fullAnswer = '';
+        let sseBuffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                // Flush any buffered content on stream end.
+                sseBuffer += decoder.decode();
+                break;
+            }
+
+            sseBuffer += decoder.decode(value, { stream: true });
+            const lines = sseBuffer.split('\n');
+            sseBuffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.chunk) {
+                            // Append chunk to the message
+                            fullAnswer += data.chunk;
+                            botMessageDiv.textContent = fullAnswer;
+                            scrollChatToBottom();
+                        }
+                        
+                        if (data.final) {
+                            // Final answer received
+                            fullAnswer = data.answer || fullAnswer;
+                            botMessageDiv.textContent = fullAnswer;
+                            scrollChatToBottom();
+                            
+                            // Add to chat history
+                            chatHistory.push({ role: 'assistant', content: fullAnswer });
+                            if (chatHistory.length > 6) chatHistory.shift();
+                        }
+                        
+                        if (data.error) {
+                            botMessageDiv.textContent = `⚠️ ${data.error}`;
+                        }
+                    } catch (e) {
+                        console.log('Parse error:', e);
+                    }
+                }
+            }
+        }
+
+        // Parse any final buffered SSE line if present.
+        const tailLine = sseBuffer.trim();
+        if (tailLine.startsWith('data: ')) {
+            try {
+                const data = JSON.parse(tailLine.slice(6));
+                if (data.chunk) {
+                    fullAnswer += data.chunk;
+                    botMessageDiv.textContent = fullAnswer;
+                    scrollChatToBottom();
+                }
+                if (data.final) {
+                    fullAnswer = data.answer || fullAnswer;
+                    botMessageDiv.textContent = fullAnswer;
+                    scrollChatToBottom();
+                }
+            } catch (e) {
+                console.log('Tail parse error:', e);
+            }
         }
 
     } catch (err) {
         clearTimeout(timeoutId);
         if (err.name !== 'AbortError') {
             console.error('❌ Chat Error:', err);
-            typingIndicator.remove();
-            addMessage('Bot', `⚠️ Something went wrong. Please try again or contact us:\n📞 ${contactInfo.phone}\n📧 ${contactInfo.email}`);
+            botMessageDiv.textContent = `⚠️ Something went wrong. Please try again or contact us:\n📞 ${contactInfo.phone}\n📧 ${contactInfo.email}`;
         }
     }
 }
@@ -111,7 +183,7 @@ function addMessage(sender, text, isTyping = false) {
     }
 
     chatBox.appendChild(msg);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    scrollChatToBottom();
     return msg;
 }
 
@@ -133,7 +205,7 @@ function addEnquireButton() {
 
     wrapper.appendChild(btn);
     chatBox.appendChild(wrapper);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    scrollChatToBottom();
 }
 
 // ================= LEAD FORM INLINE =================
@@ -149,18 +221,41 @@ function openLeadModal() {
     formWrapper.className = 'message bot-message inline-lead-form-wrapper';
     formWrapper.id = 'inline-lead-form';
 
-    // Build form dynamically from schema
+    // Build form dynamically from schema. If schema isn't loaded yet,
+    // keep a safe fallback so the service dropdown is always available.
+    const fallbackServices = [
+        "Digital Marketing",
+        "Creative Services",
+        "Print Advertising",
+        "Radio Advertising",
+        "Content Marketing",
+        "Web Development",
+        "Celebrity Endorsements",
+        "Influencer Marketing"
+    ];
+    const safeSchema = (formSchema && Array.isArray(formSchema.fields) && formSchema.fields.length > 0)
+        ? formSchema
+        : {
+            fields: [
+                { id: "name", type: "text", placeholder: "Name *" },
+                { id: "phone", type: "tel", placeholder: "Phone Number *" },
+                { id: "email", type: "email", placeholder: "Email Address *" },
+                { id: "service", type: "select", placeholder: "Select Service *", options: fallbackServices },
+                { id: "message", type: "textarea", placeholder: "Message (optional)" }
+            ]
+        };
+
     let formHTML = '<div class="lead-content"><h3>Share your details</h3>';
     
-    if (formSchema.fields) {
-        formSchema.fields.forEach(field => {
+    if (safeSchema.fields && Array.isArray(safeSchema.fields) && safeSchema.fields.length > 0) {
+        safeSchema.fields.forEach(field => {
             if (field.type === 'select') {
                 formHTML += `
                     <select id="lead${field.id.charAt(0).toUpperCase() + field.id.slice(1)}" 
                             data-field="${field.id}" 
                             class="lead-input">
                         <option value="">${field.placeholder}</option>
-                        ${field.options.map(opt => `<option>${opt}</option>`).join('')}
+                        ${(field.options || []).map(opt => `<option>${opt}</option>`).join('')}
                     </select>`;
             } else if (field.type === 'textarea') {
                 formHTML += `<textarea id="lead${field.id.charAt(0).toUpperCase() + field.id.slice(1)}" 
@@ -188,16 +283,18 @@ function openLeadModal() {
 
     formWrapper.innerHTML = formHTML;
     chatBox.appendChild(formWrapper);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    scrollChatToBottom();
 
     // Add inline validation listeners
-    formSchema.fields.forEach(field => {
-        const fieldId = `lead${field.id.charAt(0).toUpperCase() + field.id.slice(1)}`;
-        const element = document.getElementById(fieldId);
-        if (element) {
-            element.addEventListener('blur', () => validateField(field.id));
-        }
-    });
+    if (safeSchema.fields && Array.isArray(safeSchema.fields)) {
+        safeSchema.fields.forEach(field => {
+            const fieldId = `lead${field.id.charAt(0).toUpperCase() + field.id.slice(1)}`;
+            const element = document.getElementById(fieldId);
+            if (element) {
+                element.addEventListener('blur', () => validateField(field.id));
+            }
+        });
+    }
 }
 
 function closeLeadModal() {
@@ -225,7 +322,7 @@ async function validateField(fieldId) {
         const validationData = {};
         validationData[fieldId] = value;
 
-        const res = await fetch('/submit-lead/validate', {
+        const res = await fetch(`${leadApiBase}/validate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(validationData)
@@ -255,7 +352,7 @@ async function validateAllFields() {
         const service = document.getElementById('leadService')?.value || '';
 
         // Validate all at once
-        const res = await fetch('/submit-lead/validate', {
+        const res = await fetch(`${leadApiBase}/validate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -296,7 +393,7 @@ async function submitLead() {
     const message = document.getElementById("leadMsg")?.value.trim() || "";
 
     try {
-        const response = await fetch("/submit-lead", {
+        const response = await fetch(leadApiBase, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name, phone, email, service, message })
@@ -305,15 +402,20 @@ async function submitLead() {
         const result = await response.json();
 
         if (result.success) {
+            const nameEl = document.getElementById("leadName");
+            const phoneEl = document.getElementById("leadPhone");
+            const emailEl = document.getElementById("leadEmail");
+            const serviceEl = document.getElementById("leadService");
+            const msgEl = document.getElementById("leadMsg");
+
+            if (nameEl) nameEl.value = "";
+            if (phoneEl) phoneEl.value = "";
+            if (emailEl) emailEl.value = "";
+            if (serviceEl) serviceEl.value = "";
+            if (msgEl) msgEl.value = "";
+
             closeLeadModal();
             addMessage("Bot", "✅ Thanks! Our team will reach out soon 🙂");
-            document.getElementById("leadName").value = "";
-            document.getElementById("leadPhone").value = "";
-            document.getElementById("leadEmail").value = "";
-            document.getElementById("leadService").value = "";
-            if (document.getElementById("leadMsg")) {
-                document.getElementById("leadMsg").value = "";
-            }
         } else {
             errorBox.innerText = result.message || "Submission failed";
         }

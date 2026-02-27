@@ -2,13 +2,23 @@
 import asyncio
 import hashlib
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.models.chat import ChatRequest, ChatResponse
-from app.services.chat_service import run_chat
+from app.services.chat_service import (
+    run_chat,
+    build_parallel_context,
+    needs_external_web_fallback,
+    extract_founded_year_answer,
+)
+from app.rag.graph import RAGState, answer_node_streaming
 from app.utils.intent_engine import get_intent_response
+from app.utils.intent_engine import is_external_query
+import json
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["chat"])
@@ -16,9 +26,14 @@ router = APIRouter(prefix="/v1", tags=["chat"])
 # ✅ Simple in-memory cache (max 50 entries)
 _cache: dict = {}
 
+# Website URL for web search
+WEBSITE_URL = "https://ritzmediaworld.com"
+CHAT_TIMEOUT_SECONDS = 12.0
 
-def get_cache_key(message: str) -> str:
-    return hashlib.md5(message.strip().lower().encode()).hexdigest()
+
+def get_cache_key(message: str, developer_context: str = "") -> str:
+    raw = f"{message.strip().lower()}|{(developer_context or '').strip().lower()}"
+    return hashlib.md5(raw.encode()).hexdigest()
 
 
 def _extract_answer_from_cache(cached: object) -> str:
@@ -38,6 +53,7 @@ def _extract_answer_from_cache(cached: object) -> str:
 class MessageRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    developer_context: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -75,7 +91,7 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
         logger.info(f"🔄 No intent match, routing to RAG...")
         
         # Intent type is "general" - use RAG
-        cache_key = get_cache_key(req.message)
+        cache_key = get_cache_key(req.message, req.developer_context or "")
         if cache_key in _cache:
             logger.info(f"⚡ Cache hit: {req.message[:50]}")
             answer = _extract_answer_from_cache(_cache[cache_key])
@@ -88,10 +104,10 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
             )
 
         # Run with 12s timeout
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
-            loop.run_in_executor(None, run_chat, req.message),
-            timeout=12.0
+            loop.run_in_executor(None, run_chat, req.message, req.developer_context or ""),
+            timeout=CHAT_TIMEOUT_SECONDS
         )
 
         # Extract answer from result dict
@@ -113,7 +129,7 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
             intent="general",
             show_lead_form=False,
             follow_up=None,
-            enquiry_message=None,  # No enquiry message for normal RAG conversation
+            enquiry_message=None,
         )
 
     except asyncio.TimeoutError:
@@ -152,10 +168,10 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
             return ChatResponse(answer=answer)
 
         # ✅ Run with 8s timeout (prevents hanging)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(None, run_chat, req.message),
-            timeout=12.0
+            timeout=CHAT_TIMEOUT_SECONDS
         )
 
         # Extract answer from result dict
@@ -191,4 +207,211 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
                 "📞 +91-7290002168\n"
                 "📧 info@ritzmediaworld.com"
             )
+        )
+
+
+# ================= STREAMING ENDPOINT WITH WEB SEARCH =================
+
+def _split_word_safe_chunks(buffer: str) -> tuple[list[str], str]:
+    if not buffer:
+        return [], ""
+    if not re.search(r"\s", buffer):
+        return [], buffer
+
+    last_space_index = max(buffer.rfind(" "), buffer.rfind("\n"), buffer.rfind("\t"))
+    if last_space_index <= 0:
+        return [], buffer
+
+    ready_text = buffer[: last_space_index + 1]
+    remaining = buffer[last_space_index + 1 :]
+    parts = [part for part in re.findall(r"\S+\s*", ready_text) if part]
+    return parts, remaining
+
+
+def _iter_word_chunks(text: str) -> list[str]:
+    return [part for part in re.findall(r"\S+\s*", text or "") if part]
+
+
+async def stream_rag_response(question: str, developer_context: str = ""):
+    """
+    Generator function that yields streaming response chunks.
+    Includes web search from ritzmediaworld.com
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        context_bundle = await loop.run_in_executor(
+            None,
+            build_parallel_context,
+            question,
+            WEBSITE_URL,
+            True,
+            developer_context or "",
+        )
+        
+        # Build initial state with web context
+        state: RAGState = {
+            "question": question,
+            "docs": context_bundle.get("docs", []),
+            "answer": "",
+            "web_context": context_bundle.get("web_context", ""),
+            "developer_context": context_bundle.get("developer_context", ""),
+            "external_context": "",
+        }
+        
+        logger.info(
+            "🚀 Starting RAG streaming for: %s | docs=%d web_chars=%d dev_chars=%d",
+            question[:30],
+            len(state.get("docs", [])),
+            len(state.get("web_context", "")),
+            len(state.get("developer_context", "")),
+        )
+
+        # Deterministic fast path for foundational year queries.
+        founded_year_answer = extract_founded_year_answer(
+            question=question,
+            docs=state.get("docs", []),
+            web_context=state.get("web_context", ""),
+        )
+        if founded_year_answer:
+            for word in _iter_word_chunks(founded_year_answer):
+                yield f"data: {json.dumps({'chunk': word})}\n\n"
+            yield f"data: {json.dumps({'final': True, 'answer': founded_year_answer})}\n\n"
+            return
+        
+        # For clearly external queries, build merged two-part answer via service
+        # and stream that directly word-by-word.
+        if is_external_query(question):
+            loop = asyncio.get_running_loop()
+            merged_result = await loop.run_in_executor(
+                None,
+                run_chat,
+                question,
+                developer_context or "",
+            )
+            merged_answer = (merged_result.get("answer") or "").strip()
+            for word in _iter_word_chunks(merged_answer):
+                yield f"data: {json.dumps({'chunk': word})}\n\n"
+            yield f"data: {json.dumps({'final': True, 'answer': merged_answer})}\n\n"
+            return
+
+        # Non-external query: stream directly from generator.
+        defer_chunks = False
+
+        # Stream directly from the answer generator so custom stream fields
+        # (is_chunk/final_answer) are preserved.
+        pending_buffer = ""
+        assembled_answer = ""
+        final_sent = False
+        async for payload in answer_node_streaming(state):
+            answer_chunk = payload.get("answer", "")
+            is_chunk = bool(payload.get("is_chunk", False))
+            final_answer = payload.get("final_answer", "")
+
+            if final_answer and not is_chunk:
+                if pending_buffer:
+                    if not defer_chunks:
+                        yield f"data: {json.dumps({'chunk': pending_buffer})}\n\n"
+                    assembled_answer += pending_buffer
+                    pending_buffer = ""
+                if needs_external_web_fallback(final_answer):
+                    logger.info("🔁 Low-confidence final detected, running external fallback.")
+                    loop = asyncio.get_running_loop()
+                    fallback_result = await loop.run_in_executor(
+                        None,
+                        run_chat,
+                        question,
+                        developer_context or "",
+                    )
+                    upgraded = (fallback_result.get("answer") or "").strip()
+                    if upgraded:
+                        for word in _iter_word_chunks(upgraded):
+                            yield f"data: {json.dumps({'chunk': word})}\n\n"
+                        yield f"data: {json.dumps({'final': True, 'answer': upgraded})}\n\n"
+                        final_sent = True
+                        continue
+                logger.info("✅ Sending final answer (%d chars)", len(final_answer))
+                yield f"data: {json.dumps({'final': True, 'answer': final_answer})}\n\n"
+                final_sent = True
+                continue
+
+            if answer_chunk and is_chunk:
+                pending_buffer += answer_chunk
+                word_chunks, pending_buffer = _split_word_safe_chunks(pending_buffer)
+                for word_chunk in word_chunks:
+                    assembled_answer += word_chunk
+                    if not defer_chunks:
+                        yield f"data: {json.dumps({'chunk': word_chunk})}\n\n"
+
+        if not final_sent:
+            if pending_buffer:
+                assembled_answer += pending_buffer
+                if not defer_chunks:
+                    yield f"data: {json.dumps({'chunk': pending_buffer})}\n\n"
+            final_text = assembled_answer.strip()
+            if final_text:
+                logger.info("✅ Sending synthesized final answer (%d chars)", len(final_text))
+                yield f"data: {json.dumps({'final': True, 'answer': final_text})}\n\n"
+            else:
+                fallback = "Something went wrong. Please try again."
+                yield f"data: {json.dumps({'final': True, 'answer': fallback})}\n\n"
+                    
+    except Exception as e:
+        logger.error(f"❌ Streaming error: {str(e)}")
+        yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
+
+
+@router.post("/message/stream")
+async def message_stream_endpoint(req: MessageRequest):
+    """
+    POST /v1/message/stream — Streaming chat endpoint
+    Returns SSE (Server-Sent Events) stream for real-time response
+    Includes web search from ritzmediaworld.com
+    """
+    try:
+        logger.info(f"📨 /v1/message/stream received: {req.message[:80]}")
+        
+        # Check intent engine first (for quick responses)
+        intent_response = get_intent_response(req.message)
+        
+        if intent_response:
+            # Return instant response for intents
+            logger.info(f"🎯 Intent matched (streaming): {intent_response.get('intent')}")
+            answer = intent_response["answer"]
+            # Stream response word-by-word for consistency.
+            async def intent_stream():
+                for word in _iter_word_chunks(answer):
+                    yield f"data: {json.dumps({'chunk': word})}\n\n"
+                yield f"data: {json.dumps({'final': True, 'answer': answer})}\n\n"
+            
+            return StreamingResponse(
+                intent_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+        
+        # No intent match - use RAG streaming with web search
+        logger.info(f"🔄 No intent match, routing to RAG streaming with web search...")
+        
+        return StreamingResponse(
+            stream_rag_response(req.message, req.developer_context or ""),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Stream endpoint error: {str(e)}")
+        async def error_stream():
+            yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
+        
+        return StreamingResponse(
+            error_stream(),
+            media_type="text/event-stream"
         )
