@@ -5,11 +5,11 @@ pydantic-settings==2.5.2
 
 langchain==0.3.13
 langchain-community==0.3.13
-langchain-core==0.3.25
+langchain-core==0.3.27
 langchain-openai==0.2.14
 langchain-google-genai==2.0.4
 langgraph==0.2.62
-langchain-text-splitters==0.3.2
+langchain-text-splitters==0.3.3
 
 faiss-cpu==1.13.0
 
