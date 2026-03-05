@@ -2,7 +2,7 @@
 
 from abc import abstractmethod
 from pathlib import Path
-from typing import IO, Any, Optional, Protocol, Union
+from typing import IO, Any, Dict, List, Optional, Protocol, Tuple, Union
 
 from ._utils import StrByteType, StreamType
 
@@ -14,7 +14,7 @@ class PdfObjectProtocol(Protocol):
         self,
         pdf_dest: Any,
         force_duplicate: bool = False,
-        ignore_fields: Union[tuple[str, ...], list[str], None] = (),
+        ignore_fields: Union[Tuple[str, ...], List[str], None] = (),
     ) -> Any:
         ...  # pragma: no cover
 
@@ -43,7 +43,7 @@ class PdfCommonDocProtocol(Protocol):
         ...  # pragma: no cover
 
     @property
-    def pages(self) -> list[Any]:
+    def pages(self) -> List[Any]:
         ...  # pragma: no cover
 
     @property
@@ -61,24 +61,24 @@ class PdfCommonDocProtocol(Protocol):
 class PdfReaderProtocol(PdfCommonDocProtocol, Protocol):
     @property
     @abstractmethod
-    def xref(self) -> dict[int, dict[int, Any]]:
+    def xref(self) -> Dict[int, Dict[int, Any]]:
         ...  # pragma: no cover
 
     @property
     @abstractmethod
-    def trailer(self) -> dict[str, Any]:
+    def trailer(self) -> Dict[str, Any]:
         ...  # pragma: no cover
 
 
 class PdfWriterProtocol(PdfCommonDocProtocol, Protocol):
-    _objects: list[Any]
-    _id_translated: dict[int, dict[int, int]]
+    _objects: List[Any]
+    _id_translated: Dict[int, Dict[int, int]]
 
     incremental: bool
     _reader: Any  # PdfReader
 
     @abstractmethod
-    def write(self, stream: Union[Path, StrByteType]) -> tuple[bool, IO[Any]]:
+    def write(self, stream: Union[Path, StrByteType]) -> Tuple[bool, IO[Any]]:
         ...  # pragma: no cover
 
     @abstractmethod

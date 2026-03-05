@@ -13961,6 +13961,7 @@ adobe_glyphs = {
 
 
 def _complete() -> None:
+    global adobe_glyphs
     for i in range(256):
         adobe_glyphs[f"/a{i}"] = chr(i)
     adobe_glyphs["/.notdef"] = "□"

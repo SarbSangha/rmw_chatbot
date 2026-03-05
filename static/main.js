@@ -53,6 +53,7 @@ async function sendMessage() {
     // Create a message element for streaming response
     const botMessageDiv = document.createElement('div');
     botMessageDiv.className = 'message bot-message';
+    //botMessageDiv.innerHTML = `<div class="typing"><span></span><span></span><span></span></div>`;
     const chatBox = document.getElementById('chat-box');
     chatBox.appendChild(botMessageDiv);
     scrollChatToBottom();
@@ -87,6 +88,10 @@ async function sendMessage() {
         const decoder = new TextDecoder();
         let fullAnswer = '';
         let sseBuffer = '';
+        let finalRecorded = false;
+      
+
+       
 
         while (true) {
             const { done, value } = await reader.read();
@@ -106,7 +111,7 @@ async function sendMessage() {
                         const data = JSON.parse(line.slice(6));
                         
                         if (data.chunk) {
-                            // Append chunk to the message
+                             // Append chunk to the message
                             fullAnswer += data.chunk;
                             botMessageDiv.textContent = fullAnswer;
                             scrollChatToBottom();
@@ -114,13 +119,17 @@ async function sendMessage() {
                         
                         if (data.final) {
                             // Final answer received
+                           // flushQueuedWords();
                             fullAnswer = data.answer || fullAnswer;
                             botMessageDiv.textContent = fullAnswer;
                             scrollChatToBottom();
                             
                             // Add to chat history
-                            chatHistory.push({ role: 'assistant', content: fullAnswer });
-                            if (chatHistory.length > 6) chatHistory.shift();
+                            if (!finalRecorded) {
+                                chatHistory.push({ role: 'assistant', content: fullAnswer });
+                                if (chatHistory.length > 6) chatHistory.shift();
+                                finalRecorded = true;
+                            }
                         }
                         
                         if (data.error) {
@@ -139,14 +148,20 @@ async function sendMessage() {
             try {
                 const data = JSON.parse(tailLine.slice(6));
                 if (data.chunk) {
-                    fullAnswer += data.chunk;
-                    botMessageDiv.textContent = fullAnswer;
-                    scrollChatToBottom();
+                      // Append chunk to the message
+                            fullAnswer += data.chunk;
+                            botMessageDiv.textContent = fullAnswer;
+                            scrollChatToBottom();
                 }
                 if (data.final) {
                     fullAnswer = data.answer || fullAnswer;
                     botMessageDiv.textContent = fullAnswer;
                     scrollChatToBottom();
+                    if (!finalRecorded) {
+                        chatHistory.push({ role: 'assistant', content: fullAnswer });
+                        if (chatHistory.length > 6) chatHistory.shift();
+                        finalRecorded = true;
+                    }
                 }
             } catch (e) {
                 console.log('Tail parse error:', e);

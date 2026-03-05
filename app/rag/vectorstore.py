@@ -1,19 +1,11 @@
 from langchain_community.vectorstores import FAISS
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from app.core.config import settings
+from app.utils.genai_adapter import GeminiEmbeddings
 import os
-
-embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/gemini-embedding-001",
-    google_api_key=settings.GEMINI_API_KEY
-)
 
 def get_vectorstore():
     if os.path.exists(settings.CHROMA_PERSIST_DIR):
-        local_embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/gemini-embedding-001",
-            google_api_key=settings.GEMINI_API_KEY
-        )
+        local_embeddings = GeminiEmbeddings(model="models/gemini-embedding-001")
         vectordb = FAISS.load_local(
             settings.CHROMA_PERSIST_DIR, local_embeddings, allow_dangerous_deserialization=True
         )

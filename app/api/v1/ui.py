@@ -103,7 +103,7 @@ async def get_chat_config():
     Returns chat configuration that frontend should use
     """
     return ChatConfigResponse(
-        timeout_ms=12000,
+        timeout_ms=20000,
         typing_indicator_delay=500,
         enable_caching=True,
         max_history=6

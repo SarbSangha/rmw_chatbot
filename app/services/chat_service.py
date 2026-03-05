@@ -17,8 +17,8 @@ from app.rag.graph import rag_graph
 from app.utils.web_scraper import search_website, search_web_general
 from app.rag.vectorstore import get_retriever
 from app.utils.intent_engine import is_external_query
-from langchain_google_genai import ChatGoogleGenerativeAI
 from app.core.config import settings
+from app.utils.genai_adapter import GeminiChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,10 @@ _LOW_CONFIDENCE_MARKERS = (
     "i could not find",
     "not found in the context",
     "cannot provide a specific list",
+    "please contact us",
+    "something went wrong",
+    "i'm having trouble right now",
+    "i could not find enough reliable information",
 )
 
 
@@ -127,6 +131,163 @@ def _top_fm_channels_india_answer() -> str:
     )
 
 
+def _is_top_newspaper_query(question: str) -> bool:
+    q = (question or "").lower()
+    if "newspaper" not in q and "news paper" not in q:
+        return False
+    return any(
+        key in q
+        for key in (
+            "top newspaper",
+            "best newspaper",
+            "top newspapers",
+            "best newspapers",
+            "newspaper in india",
+            "newspaper in delhi",
+            "newspapers in india",
+            "newspapers in delhi",
+        )
+    )
+
+
+def _top_newspapers_answer(question: str) -> str:
+    q = (question or "").lower()
+    if "delhi" in q:
+        return (
+            "1. Hindustan Times\n"
+            "2. The Times of India\n"
+            "3. The Hindu (Delhi edition)\n"
+            "4. The Indian Express\n"
+            "5. The Statesman\n"
+            "6. The Economic Times\n"
+            "7. Navbharat Times\n"
+            "8. Dainik Jagran\n"
+            "9. Amar Ujala\n"
+            "10. Jansatta"
+        )
+    return (
+        "1. The Times of India\n"
+        "2. Hindustan Times\n"
+        "3. The Hindu\n"
+        "4. The Indian Express\n"
+        "5. Dainik Bhaskar\n"
+        "6. Dainik Jagran\n"
+        "7. Amar Ujala\n"
+        "8. The Economic Times\n"
+        "9. Anandabazar Patrika\n"
+        "10. Malayala Manorama"
+    )
+
+
+def _is_agency_landscape_query(question: str) -> bool:
+    q = (question or "").lower()
+    has_agency_topic = any(token in q for token in ("agency", "agencies", "media company", "advertising company"))
+    has_ranking_intent = any(token in q for token in ("top", "best", "list", "ranking", "compare", "vs"))
+    has_geo = any(token in q for token in ("in india", "in delhi", "in ncr", "in mumbai", "in bangalore"))
+    return has_agency_topic and (has_ranking_intent or has_geo)
+
+
+def _is_social_performance_combo_query(question: str) -> bool:
+    q = (question or "").lower()
+    has_social = "social media" in q or "smm" in q
+    has_perf = any(
+        token in q
+        for token in (
+            "performance",
+            "proformance",
+            "performence",
+            "perfomance",
+            "ppc",
+            "paid ad",
+            "paid ads",
+            "ads",
+            "adds",
+        )
+    )
+    return has_social and has_perf
+
+
+def _is_video_production_query(question: str) -> bool:
+    q = (question or "").lower()
+    return any(token in q for token in ("video production", "video shoot", "video content", "ad film", "reel production"))
+
+
+def _is_lead_generation_query(question: str) -> bool:
+    q = (question or "").lower()
+    return "lead generation" in q or "lead generations" in q or "generate leads" in q
+
+
+def _is_next_step_query(question: str) -> bool:
+    q = (question or "").lower()
+    has_agency_intent = any(token in q for token in ("agency", "hire", "work with", "get started"))
+    has_next_step = any(token in q for token in ("next step", "what next", "how to proceed", "how do we start", "start"))
+    return has_agency_intent and has_next_step
+
+
+def _social_performance_combo_answer() -> str:
+    return (
+        "Yes. We can run Social Media Management and Performance Ads together as one integrated plan.\n\n"
+        "Typical execution includes:\n"
+        "1. Audience and funnel strategy\n"
+        "2. Creative + ad copy for each funnel stage\n"
+        "3. Paid campaigns (Meta/Google) with weekly optimization\n"
+        "4. Lead tracking, CPL/ROAS reporting, and scaling winners\n\n"
+        "If you share your industry and monthly budget range, I can suggest a practical starting plan."
+    )
+
+
+def _video_production_answer() -> str:
+    return (
+        "Yes. We support video production within our Creative Services workflow.\n\n"
+        "This usually covers:\n"
+        "1. Concept and script\n"
+        "2. Shoot planning and production\n"
+        "3. Editing, motion graphics, and ad-ready cuts\n"
+        "4. Platform-specific versions for Instagram, YouTube, and paid ads\n\n"
+        "Share your objective (brand film, reels, product video, ad creatives), and we can recommend the right format."
+    )
+
+
+def _lead_generation_answer() -> str:
+    return (
+        "We help with lead generation through a combined SEO + paid media + landing page funnel.\n\n"
+        "Typical approach:\n"
+        "1. Define ICP and offer\n"
+        "2. Build/optimize landing page and tracking\n"
+        "3. Run Google/Meta campaigns and retargeting\n"
+        "4. Optimize weekly for lead quality and CPL\n\n"
+        "If you want, share your target location and budget and we can suggest the first campaign structure."
+    )
+
+
+def _next_step_answer() -> str:
+    return (
+        "Great next step is a short discovery call.\n\n"
+        "Please share:\n"
+        "1. Your business category\n"
+        "2. Primary goal (leads, sales, awareness)\n"
+        "3. Monthly budget range\n"
+        "4. Target geography\n\n"
+        "After that, we can suggest a practical plan and timeline."
+    )
+
+
+def _is_brand_work_query(question: str) -> bool:
+    q = (question or "").lower()
+    return (
+        ("brand" in q or "client" in q or "portfolio" in q)
+        and any(token in q for token in ("worked", "work", "top", "which", "who"))
+    )
+
+
+def _brand_work_answer_from_context(web_context: str) -> str:
+    return (
+        "Ritz Media World's website highlights portfolio work and 'Brands That Trust Us', "
+        "but a public named top-brand list is not shown in the available content. "
+        "You can review the work page here: https://ritzmediaworld.com/work.html"
+    )
+
+
 def _format_external_web_answer(external_context: str) -> str:
     lines = [line.rstrip() for line in external_context.splitlines() if line.strip()]
     selected = lines[:18]
@@ -154,14 +315,11 @@ def _extract_external_titles(external_context: str, max_titles: int = 5) -> list
 
 
 @lru_cache(maxsize=1)
-def _get_company_extractor_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
+def _get_company_extractor_llm() -> GeminiChatModel:
+    return GeminiChatModel(
         model="gemini-2.5-flash",
-        google_api_key=settings.GEMINI_API_KEY,
         temperature=0.1,
         max_output_tokens=220,
-        max_retries=0,
-        request_timeout=12,
     )
 
 
@@ -201,6 +359,53 @@ Snippets:
     except Exception as exc:
         logger.warning("⚠️ Company-name extraction failed: %s", exc)
         return []
+
+
+@lru_cache(maxsize=1)
+def _get_general_fallback_llm() -> GeminiChatModel:
+    return GeminiChatModel(
+        model="gemini-2.5-flash",
+        temperature=0.4,
+        max_output_tokens=700,
+    )
+
+
+def _answer_with_general_gemini(
+    question: str,
+    developer_context: str = "",
+    web_context: str = "",
+) -> str:
+    if not settings.GEMINI_API_KEY:
+        return ""
+    try:
+        llm = _get_general_fallback_llm()
+        prompt = f"""
+You are a helpful marketing and business assistant for Ritz Media World.
+
+When the website context is incomplete, still answer the user's query using your internal knowledge and practical best practices.
+Do not reply with "I cannot find enough information" unless the question is impossible.
+Keep the response concise, actionable, and professional.
+-Return clean plain text only (no markdown).
+-Do not use asterisks (*) or markdown bullets.
+-Use short headings and numbered points when useful.
+-Add subheadings only when needed for clarity.
+
+
+DEVELOPER NOTES:
+{(developer_context or "").strip()}
+
+WEBSITE CONTEXT (optional):
+{(web_context or "")[:3500]}
+
+USER QUESTION:
+{question}
+"""
+        resp = llm.invoke(prompt)
+        text = (getattr(resp, "content", "") or "").strip()
+        return text
+    except Exception as exc:
+        logger.warning("General Gemini fallback failed: %s", exc)
+        return ""
 
 
 def _fallback_india_agency_names(max_names: int = 8) -> list[str]:
@@ -249,7 +454,7 @@ def _compose_professional_blended_answer(
     titles = _extract_external_titles(external_context, max_titles=6)
     company_names = _extract_company_names_with_llm(question, external_context, max_names=8)
 
-    if "agenc" in question.lower() or "media" in question.lower():
+    if _is_agency_landscape_query(question):
         if (
             not clean_internal
             or "*" in (internal_answer or "")
@@ -330,6 +535,26 @@ def run_chat_with_web(
         elapsed = time.time() - start
         logger.info(f"⏱️ Total time: {elapsed:.2f}s (top-fm fast path)")
         return {"answer": _top_fm_channels_india_answer(), "has_answer": True}
+    if _is_social_performance_combo_query(question):
+        elapsed = time.time() - start
+        logger.info(f"?? Total time: {elapsed:.2f}s (social+performance fast path)")
+        return {"answer": _social_performance_combo_answer(), "has_answer": True}
+    if _is_video_production_query(question):
+        elapsed = time.time() - start
+        logger.info(f"?? Total time: {elapsed:.2f}s (video-production fast path)")
+        return {"answer": _video_production_answer(), "has_answer": True}
+    if _is_lead_generation_query(question):
+        elapsed = time.time() - start
+        logger.info(f"?? Total time: {elapsed:.2f}s (lead-generation fast path)")
+        return {"answer": _lead_generation_answer(), "has_answer": True}
+    if _is_next_step_query(question):
+        elapsed = time.time() - start
+        logger.info(f"?? Total time: {elapsed:.2f}s (next-step fast path)")
+        return {"answer": _next_step_answer(), "has_answer": True}
+    if _is_top_newspaper_query(question):
+        elapsed = time.time() - start
+        logger.info(f"⏱️ Total time: {elapsed:.2f}s (top-newspaper fast path)")
+        return {"answer": _top_newspapers_answer(question), "has_answer": True}
 
     state = {
         "question": question,
@@ -355,6 +580,14 @@ def run_chat_with_web(
     )
 
     try:
+        if _is_brand_work_query(question):
+            elapsed = time.time() - start
+            logger.info(f"⏱️ Total time: {elapsed:.2f}s (brand-work fast path)")
+            return {
+                "answer": _brand_work_answer_from_context(state.get("web_context", "")),
+                "has_answer": True,
+            }
+
         # Deterministic fast path for year-foundation queries.
         founded_year_answer = extract_founded_year_answer(
             question=question,
@@ -369,13 +602,25 @@ def run_chat_with_web(
         result_state = rag_graph.invoke(state)
         answer = result_state.get("answer", "").strip()
 
-        should_fetch_external = is_external_query(question) or needs_external_web_fallback(answer)
+        should_fetch_external = is_external_query(question) or (
+            needs_external_web_fallback(answer) and _is_agency_landscape_query(question)
+        )
         if should_fetch_external:
-            external_context = search_web_general(question, max_results=5)
-            if "agenc" in question.lower() or "media" in question.lower():
-                names_context = search_web_general(f"{question} company names list", max_results=5)
+            is_media_query = _is_agency_landscape_query(question)
+            if is_media_query:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    external_future = executor.submit(search_web_general, question, 5)
+                    names_future = executor.submit(
+                        search_web_general,
+                        f"{question} company names list",
+                        5,
+                    )
+                    external_context = external_future.result()
+                    names_context = names_future.result()
                 if names_context:
                     external_context = f"{external_context}\n\n{names_context}"
+            else:
+                external_context = search_web_general(question, max_results=3)
             logger.info("🌍 Running external web fallback for: %s", question[:60])
             logger.info("🌍 External web context size: %d chars", len(external_context))
             external_answer = _format_external_web_answer(external_context) if external_context else ""
@@ -384,6 +629,16 @@ def run_chat_with_web(
                 internal_answer=answer,
                 external_context=external_answer,
             )
+
+        # If answer is still low-confidence, ask Gemini to answer using general knowledge.
+        if needs_external_web_fallback(answer):
+            general_answer = _answer_with_general_gemini(
+                question=question,
+                developer_context=developer_context,
+                web_context=state.get("web_context", ""),
+            )
+            if general_answer:
+                answer = general_answer
 
         elapsed = time.time() - start
         logger.info(f"⏱️ Total time: {elapsed:.2f}s")

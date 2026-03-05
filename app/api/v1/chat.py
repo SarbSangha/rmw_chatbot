@@ -25,10 +25,11 @@ router = APIRouter(prefix="/v1", tags=["chat"])
 
 # ✅ Simple in-memory cache (max 50 entries)
 _cache: dict = {}
+MAX_CACHE_ENTRIES = 200
 
 # Website URL for web search
 WEBSITE_URL = "https://ritzmediaworld.com"
-CHAT_TIMEOUT_SECONDS = 12.0
+CHAT_TIMEOUT_SECONDS = 20.0
 
 
 def get_cache_key(message: str, developer_context: str = "") -> str:
@@ -120,7 +121,7 @@ async def message_endpoint(req: MessageRequest) -> MessageResponse:
 
         # Cache only meaningful answers, not fallback error text.
         if has_answer:
-            if len(_cache) >= 50:
+            if len(_cache) >= MAX_CACHE_ENTRIES:
                 del _cache[next(iter(_cache))]
             _cache[cache_key] = {"answer": answer}
 
@@ -182,7 +183,7 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
 
         # ✅ Store in cache only for successful answers.
         if has_answer:
-            if len(_cache) >= 50:
+            if len(_cache) >= MAX_CACHE_ENTRIES:
                 del _cache[next(iter(_cache))]
             _cache[cache_key] = {"answer": answer}
 
@@ -232,6 +233,14 @@ def _iter_word_chunks(text: str) -> list[str]:
     return [part for part in re.findall(r"\S+\s*", text or "") if part]
 
 
+def _is_brand_work_query(question: str) -> bool:
+    q = (question or "").lower()
+    return (
+        ("brand" in q or "client" in q or "portfolio" in q)
+        and any(token in q for token in ("worked", "work", "top", "which", "who"))
+    )
+
+
 async def stream_rag_response(question: str, developer_context: str = ""):
     """
     Generator function that yields streaming response chunks.
@@ -278,9 +287,9 @@ async def stream_rag_response(question: str, developer_context: str = ""):
             yield f"data: {json.dumps({'final': True, 'answer': founded_year_answer})}\n\n"
             return
         
-        # For clearly external queries, build merged two-part answer via service
+        # For clearly external/brand queries, build answer via service
         # and stream that directly word-by-word.
-        if is_external_query(question):
+        if is_external_query(question) or _is_brand_work_query(question):
             loop = asyncio.get_running_loop()
             merged_result = await loop.run_in_executor(
                 None,

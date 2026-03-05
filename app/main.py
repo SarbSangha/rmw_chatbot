@@ -3,7 +3,7 @@ import traceback
 import logging
 from pathlib import Path
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -67,6 +67,22 @@ async def root():
     # Serve the index.html file at the root URL
     index_path = static_dir / "index.html"
     return FileResponse(index_path)
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    favicon_path = static_dir / "favicon.ico"
+    if favicon_path.exists():
+        return FileResponse(favicon_path)
+    logo_path = static_dir / "images" / "rmw-final-logo.png"
+    if logo_path.exists():
+        return FileResponse(logo_path)
+    return Response(status_code=204)
+
+
+@app.get("/.well-known/appspecific/com.chrome.devtools.json")
+async def chrome_devtools_probe():
+    return Response(status_code=204)
 
 
 @app.get("/healthz")

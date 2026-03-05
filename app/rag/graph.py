@@ -6,11 +6,11 @@ from typing import TypedDict, List, AsyncGenerator
 
 from langgraph.graph import StateGraph, END
 from langchain_core.documents import Document
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.rag.vectorstore import get_retriever
 from app.rag.prompts import STRICT_RAG_PROMPT, WEB_RAG_PROMPT, EXTERNAL_FALLBACK_PROMPT
 from app.core.config import settings
+from app.utils.genai_adapter import GeminiChatModel
 
 logger = logging.getLogger(__name__)
 
@@ -67,19 +67,15 @@ class RAGState(TypedDict):
 
 
 @lru_cache(maxsize=1)
-def _get_llm() -> ChatGoogleGenerativeAI:
+def _get_llm() -> GeminiChatModel:
     if not settings.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured.")
-    return ChatGoogleGenerativeAI(
+    return GeminiChatModel(
         model="gemini-2.5-flash",
-        google_api_key=settings.GEMINI_API_KEY,
         temperature=0.3,
-        max_output_tokens=1200,
+        max_output_tokens=1600,
         top_p=0.95,
         top_k=40,
-        convert_system_message_to_human=True,
-        max_retries=0,
-        request_timeout=20,
     )
 
 

@@ -228,6 +228,41 @@ SUB_SERVICE_MAP = {
 4️⃣ Creative Collaboration
 5️⃣ Campaign Integration
 6️⃣ Performance Tracking & Messaging Optimization"""
+,
+
+    # ===== COMMON USER WORDING / SYNONYMS =====
+    "social media": """Social Media Management Services:
+
+1) Platform Strategy and Planning
+2) Content Calendars and Creative Posts
+3) Community Management and ORM
+4) Paid Social Campaigns
+5) Weekly Optimization and Reporting""",
+
+    "performance ads": """Performance Marketing Services:
+
+1) Google and Meta Ads Setup
+2) Campaign Funnel Design
+3) Audience Targeting and Retargeting
+4) Budget Optimization focused on CPL and ROAS
+5) Conversion Tracking and Reporting""",
+
+    "lead generation": """Lead Generation Services:
+
+1) ICP and Offer Strategy
+2) Landing Page and Form Optimization
+3) Paid Campaign Execution
+4) Lead Quality Filtering
+5) CPL Optimization and Scale-up""",
+
+    "video production": """Video Production (Creative Services):
+
+1) Concept and Script Development
+2) Shoot Planning and Production
+3) Editing and Motion Graphics
+4) Ad Variants for Reels, YouTube, and Social
+5) Delivery in Campaign-ready Formats"""
+
 }
 
 
@@ -255,11 +290,13 @@ def is_external_query(message: str) -> bool:
     Returns True if query is about external info like local businesses, rankings, etc.
     """
     lower = message.lower()
-    
+
     for pattern in EXTERNAL_QUERY_INDICATORS:
-        if pattern in lower:
+        escaped = re.escape(pattern).replace(r"\ ", r"\s+")
+        regex = rf"\b{escaped}\b"
+        if re.search(regex, lower):
             return True
-    
+
     return False
 
 

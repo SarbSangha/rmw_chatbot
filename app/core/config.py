@@ -1,4 +1,5 @@
 from pydantic import Field
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +24,20 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def _parse_debug(cls, value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "on", "debug", "development", "dev"}:
+            return True
+        if text in {"0", "false", "no", "off", "release", "prod", "production"}:
+            return False
+        return value
 
     def allowed_origins_list(self) -> list[str]:
         raw = (self.ALLOWED_ORIGINS or "").strip()

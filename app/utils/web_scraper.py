@@ -4,6 +4,7 @@ Web scraper helpers for website search and fallback context.
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 from urllib.parse import urljoin, urlparse, urlunparse, parse_qs
 
@@ -20,10 +21,11 @@ DEFAULT_HEADERS = {
     )
 }
 
-REQUEST_TIMEOUT_SECONDS = 12
-DEFAULT_MAX_PAGES = 5
+REQUEST_TIMEOUT_SECONDS = 7
+DEFAULT_MAX_PAGES = 3
 CONTENT_CACHE_TTL_SECONDS = 900  # 15 minutes
-SEARCH_CACHE_TTL_SECONDS = 300   # 5 minutes
+SEARCH_CACHE_TTL_SECONDS = 900   # 15 minutes
+DEFAULT_FETCH_WORKERS = 5
 
 _session = requests.Session()
 _session.headers.update(DEFAULT_HEADERS)
@@ -32,6 +34,23 @@ _cache_lock = threading.Lock()
 _website_content_cache: dict[str, tuple[float, str]] = {}
 _search_cache: dict[tuple[str, str], tuple[float, str]] = {}
 _external_search_cache: dict[str, tuple[float, str]] = {}
+
+
+def _fetch_links_content_parallel(links: list[str], max_workers: int = DEFAULT_FETCH_WORKERS) -> dict[str, Optional[str]]:
+    if not links:
+        return {}
+    worker_count = max(1, min(max_workers, len(links)))
+    results: dict[str, Optional[str]] = {}
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_to_link = {executor.submit(fetch_page_content, link): link for link in links}
+        for future in as_completed(future_to_link):
+            link = future_to_link[future]
+            try:
+                results[link] = future.result()
+            except Exception as exc:
+                logger.debug("Error fetching content for %s: %s", link, exc)
+                results[link] = None
+    return results
 
 
 def _normalize_url(url: str) -> str:
@@ -126,9 +145,10 @@ def scrape_website(url: str = DEFAULT_WEBSITE_URL, max_pages: int = DEFAULT_MAX_
     links = get_all_links(url, max_pages=max_pages)
     all_content: list[str] = []
 
+    content_by_link = _fetch_links_content_parallel(links)
     for index, link in enumerate(links, start=1):
         logger.info("Scraping page %d/%d: %s", index, len(links), link)
-        content = fetch_page_content(link)
+        content = content_by_link.get(link)
         if content and len(content) > 100:
             all_content.append(f"\n\n=== Page: {link} ===\n\n")
             all_content.append(content)
@@ -176,19 +196,22 @@ def search_website(
 
     logger.info("Searching website for query: %s", query_clean[:80])
     links = get_all_links(url, max_pages=DEFAULT_MAX_PAGES)
+    content_by_link = _fetch_links_content_parallel(links)
     relevant_content: list[str] = []
+    query_lower = query_clean.lower()
 
     for link in links:
-        content = fetch_page_content(link)
+        content = content_by_link.get(link)
         if not content:
             continue
-        if query_clean.lower() not in content.lower():
+        content_lower = content.lower()
+        if query_lower not in content_lower:
             continue
 
         lines = content.split("\n")
         relevant_lines: list[str] = []
         for idx, line in enumerate(lines):
-            if query_clean.lower() in line.lower():
+            if query_lower in line.lower():
                 start = max(0, idx - 2)
                 end = min(len(lines), idx + 3)
                 relevant_lines.extend(lines[start:end])
