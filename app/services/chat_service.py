@@ -518,6 +518,58 @@ def extract_founded_year_answer(question: str, docs: list[Any], web_context: str
     return f"Ritz Media World was founded in {year}."
 
 
+def upgrade_low_confidence_answer(
+    question: str,
+    answer: str,
+    developer_context: str = "",
+    web_context: str = "",
+) -> str:
+    """
+    Apply the existing fallback chain while reusing already-prepared
+    request context, so repeated fallback work stays minimal.
+    """
+    upgraded_answer = (answer or "").strip()
+
+    should_fetch_external = is_external_query(question) or (
+        needs_external_web_fallback(upgraded_answer) and _is_agency_landscape_query(question)
+    )
+    if should_fetch_external:
+        is_media_query = _is_agency_landscape_query(question)
+        if is_media_query:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                external_future = executor.submit(search_web_general, question, 5)
+                names_future = executor.submit(
+                    search_web_general,
+                    f"{question} company names list",
+                    5,
+                )
+                external_context = external_future.result()
+                names_context = names_future.result()
+            if names_context:
+                external_context = f"{external_context}\n\n{names_context}"
+        else:
+            external_context = search_web_general(question, max_results=3)
+        logger.info("Running external web fallback for: %s", question[:60])
+        logger.info("External web context size: %d chars", len(external_context))
+        external_answer = _format_external_web_answer(external_context) if external_context else ""
+        upgraded_answer = _compose_professional_blended_answer(
+            question=question,
+            internal_answer=upgraded_answer,
+            external_context=external_answer,
+        )
+
+    if needs_external_web_fallback(upgraded_answer):
+        general_answer = _answer_with_general_gemini(
+            question=question,
+            developer_context=developer_context,
+            web_context=web_context,
+        )
+        if general_answer:
+            upgraded_answer = general_answer
+
+    return upgraded_answer
+
+
 def run_chat_with_web(
     question: str,
     include_web: bool = True,

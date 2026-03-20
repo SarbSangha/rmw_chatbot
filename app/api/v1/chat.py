@@ -1,4 +1,4 @@
-# app/api/v1/chat.py
+﻿# app/api/v1/chat.py
 import asyncio
 import hashlib
 import logging
@@ -14,6 +14,7 @@ from app.services.chat_service import (
     build_parallel_context,
     needs_external_web_fallback,
     extract_founded_year_answer,
+    upgrade_low_confidence_answer,
 )
 from app.rag.graph import RAGState, answer_node_streaming
 from app.utils.intent_engine import get_intent_response
@@ -23,18 +24,27 @@ import json
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["chat"])
 
-# ✅ Simple in-memory cache (max 50 entries)
+# âœ… Simple in-memory cache (max 50 entries)
 _cache: dict = {}
 MAX_CACHE_ENTRIES = 200
 
 # Website URL for web search
 WEBSITE_URL = "https://ritzmediaworld.com"
-CHAT_TIMEOUT_SECONDS = 20.0
+CHAT_TIMEOUT_SECONDS = 30.0
 SSE_HEADERS = {
     "Cache-Control": "no-cache",
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
+
+
+def _timeout_answer() -> str:
+    return (
+        "Taking a bit longer than usual. If this is the first request, the server may be waking up.\n"
+        "Please try again in a few seconds, or contact us directly:\n"
+        "ðŸ“ž +91-7290002168\n"
+        "ðŸ“§ info@ritzmediaworld.com"
+    )
 
 
 def get_cache_key(message: str, developer_context: str = "") -> str:
@@ -78,21 +88,21 @@ async def message_endpoint(
     stream: bool = False,
 ):
     """
-    POST /v1/message — Intent detection + RAG chat
+    POST /v1/message â€” Intent detection + RAG chat
     Handles intent detection and returns structured response
     """
     try:
         accept_header = (request.headers.get("accept") or "").lower()
         if stream or "text/event-stream" in accept_header:
             return await message_stream_endpoint(req)
-        logger.info(f"📨 /v1/message received: {req.message[:80]}")
+        logger.info(f"ðŸ“¨ /v1/message received: {req.message[:80]}")
         
         # Check if intent engine can handle it
         intent_response = get_intent_response(req.message)
         
         if intent_response:
             # Intent matched - return predefined response
-            logger.info(f"🎯 Intent matched: {intent_response.get('intent')}")
+            logger.info(f"ðŸŽ¯ Intent matched: {intent_response.get('intent')}")
             return MessageResponse(
                 answer=intent_response["answer"],
                 intent=intent_response["intent"],
@@ -101,12 +111,12 @@ async def message_endpoint(
                 enquiry_message=intent_response.get("enquiry_message"),
             )
         
-        logger.info(f"🔄 No intent match, routing to RAG...")
+        logger.info(f"ðŸ”„ No intent match, routing to RAG...")
         
         # Intent type is "general" - use RAG
         cache_key = get_cache_key(req.message, req.developer_context or "")
         if cache_key in _cache:
-            logger.info(f"⚡ Cache hit: {req.message[:50]}")
+            logger.info(f"âš¡ Cache hit: {req.message[:50]}")
             answer = _extract_answer_from_cache(_cache[cache_key])
             return MessageResponse(
                 answer=answer,
@@ -129,7 +139,7 @@ async def message_endpoint(
             answer = str(answer) if answer is not None else ""
         has_answer = result.get("has_answer", False)
         
-        logger.info(f"✅ RAG result: has_answer={has_answer}, answer starts with: {answer[:100] if answer else 'None'}")
+        logger.info(f"âœ… RAG result: has_answer={has_answer}, answer starts with: {answer[:100] if answer else 'None'}")
 
         # Cache only meaningful answers, not fallback error text.
         if has_answer:
@@ -146,22 +156,19 @@ async def message_endpoint(
         )
 
     except asyncio.TimeoutError:
-        logger.warning(f"⏳ Timeout: {req.message[:50]}")
+        logger.warning(f"? Timeout: {req.message[:50]}")
         return MessageResponse(
-            answer=(
-                "⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n"
-                "📞 +91-7290002168"
-            ),
+            answer=_timeout_answer(),
             intent="error",
             show_lead_form=False,
         )
     except Exception as e:
-        logger.error(f"❌ Endpoint error: {str(e)}")
+        logger.error(f"? Endpoint error: {str(e)}")
         return MessageResponse(
             answer=(
-                "⚠️ Something went wrong. Please try again or contact us:\n"
-                "📞 +91-7290002168\n"
-                "📧 info@ritzmediaworld.com"
+                "?? Something went wrong. Please try again or contact us:\n"
+                "?? +91-7290002168\n"
+                "?? info@ritzmediaworld.com"
             ),
             intent="error",
             show_lead_form=False,
@@ -176,11 +183,11 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
     try:
         cache_key = get_cache_key(req.message)
         if cache_key in _cache:
-            logger.info(f"⚡ Cache hit: {req.message[:50]}")
+            logger.info(f"âš¡ Cache hit: {req.message[:50]}")
             answer = _extract_answer_from_cache(_cache[cache_key])
             return ChatResponse(answer=answer)
 
-        # ✅ Run with 8s timeout (prevents hanging)
+        # âœ… Run with 8s timeout (prevents hanging)
         loop = asyncio.get_running_loop()
         result = await asyncio.wait_for(
             loop.run_in_executor(None, run_chat, req.message),
@@ -193,7 +200,7 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
         if not isinstance(answer, str):
             answer = str(answer) if answer is not None else ""
 
-        # ✅ Store in cache only for successful answers.
+        # âœ… Store in cache only for successful answers.
         if has_answer:
             if len(_cache) >= MAX_CACHE_ENTRIES:
                 del _cache[next(iter(_cache))]
@@ -202,23 +209,15 @@ async def chat_endpoint(req: ChatRequest) -> ChatResponse:
         return ChatResponse(answer=answer)
 
     except asyncio.TimeoutError:
-        logger.warning(f"⏳ Timeout: {req.message[:50]}")
-        return ChatResponse(
-            answer=(
-                "Taking a moment to think! For quick answers, "
-                "try asking about 'Digital Marketing' or 'Web Development'.\n"
-                "Or reach us directly:\n"
-                "📞 +91-7290002168\n"
-                "📧 info@ritzmediaworld.com"
-            )
-        )
+        logger.warning(f"? Timeout: {req.message[:50]}")
+        return ChatResponse(answer=_timeout_answer())
     except Exception as e:
-        logger.error(f"❌ Endpoint error: {str(e)}")
+        logger.error(f"? Endpoint error: {str(e)}")
         return ChatResponse(
             answer=(
                 "Something went wrong. Please contact us:\n"
-                "📞 +91-7290002168\n"
-                "📧 info@ritzmediaworld.com"
+                "?? +91-7290002168\n"
+                "?? info@ritzmediaworld.com"
             )
         )
 
@@ -259,6 +258,11 @@ async def stream_rag_response(question: str, developer_context: str = ""):
     Includes web search from ritzmediaworld.com
     """
     try:
+        # Open the SSE stream immediately so the client doesn't wait for
+        # context building before the response stream starts.
+        yield f"data: {json.dumps({'status': 'starting'})}\n\n"
+        await asyncio.sleep(0)
+
         loop = asyncio.get_running_loop()
         context_bundle = await loop.run_in_executor(
             None,
@@ -280,7 +284,7 @@ async def stream_rag_response(question: str, developer_context: str = ""):
         }
         
         logger.info(
-            "🚀 Starting RAG streaming for: %s | docs=%d web_chars=%d dev_chars=%d",
+            "ðŸš€ Starting RAG streaming for: %s | docs=%d web_chars=%d dev_chars=%d",
             question[:30],
             len(state.get("docs", [])),
             len(state.get("web_context", "")),
@@ -335,22 +339,23 @@ async def stream_rag_response(question: str, developer_context: str = ""):
                     assembled_answer += pending_buffer
                     pending_buffer = ""
                 if needs_external_web_fallback(final_answer):
-                    logger.info("🔁 Low-confidence final detected, running external fallback.")
+                    logger.info("ðŸ” Low-confidence final detected, running external fallback.")
                     loop = asyncio.get_running_loop()
-                    fallback_result = await loop.run_in_executor(
+                    upgraded = await loop.run_in_executor(
                         None,
-                        run_chat,
+                        upgrade_low_confidence_answer,
                         question,
+                        final_answer,
                         developer_context or "",
+                        state.get("web_context", ""),
                     )
-                    upgraded = (fallback_result.get("answer") or "").strip()
                     if upgraded:
                         for word in _iter_word_chunks(upgraded):
                             yield f"data: {json.dumps({'chunk': word})}\n\n"
                         yield f"data: {json.dumps({'final': True, 'answer': upgraded})}\n\n"
                         final_sent = True
                         continue
-                logger.info("✅ Sending final answer (%d chars)", len(final_answer))
+                logger.info("âœ… Sending final answer (%d chars)", len(final_answer))
                 yield f"data: {json.dumps({'final': True, 'answer': final_answer})}\n\n"
                 final_sent = True
                 continue
@@ -370,21 +375,21 @@ async def stream_rag_response(question: str, developer_context: str = ""):
                     yield f"data: {json.dumps({'chunk': pending_buffer})}\n\n"
             final_text = assembled_answer.strip()
             if final_text:
-                logger.info("✅ Sending synthesized final answer (%d chars)", len(final_text))
+                logger.info("âœ… Sending synthesized final answer (%d chars)", len(final_text))
                 yield f"data: {json.dumps({'final': True, 'answer': final_text})}\n\n"
             else:
                 fallback = "Something went wrong. Please try again."
                 yield f"data: {json.dumps({'final': True, 'answer': fallback})}\n\n"
                     
     except Exception as e:
-        logger.error(f"❌ Streaming error: {str(e)}")
+        logger.error(f"âŒ Streaming error: {str(e)}")
         yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
 
 
 @router.post("/message/stream")
 async def message_stream_endpoint(req: MessageRequest):
     """
-    POST /v1/message/stream — Streaming chat endpoint
+    POST /v1/message/stream â€” Streaming chat endpoint
     Returns SSE (Server-Sent Events) stream for real-time response
     Includes web search from ritzmediaworld.com
     """
@@ -403,14 +408,14 @@ async def message_stream_endpoint(req: MessageRequest):
                 media_type="text/event-stream",
                 headers=SSE_HEADERS,
             )
-        logger.info(f"📨 /v1/message/stream received: {req.message[:80]}")
+        logger.info(f"ðŸ“¨ /v1/message/stream received: {req.message[:80]}")
         
         # Check intent engine first (for quick responses)
         intent_response = get_intent_response(req.message)
         
         if intent_response:
             # Return instant response for intents
-            logger.info(f"🎯 Intent matched (streaming): {intent_response.get('intent')}")
+            logger.info(f"ðŸŽ¯ Intent matched (streaming): {intent_response.get('intent')}")
             answer = intent_response["answer"]
             # Stream response word-by-word for consistency.
             async def intent_stream():
@@ -425,7 +430,7 @@ async def message_stream_endpoint(req: MessageRequest):
             )
         
         # No intent match - use RAG streaming with web search
-        logger.info(f"🔄 No intent match, routing to RAG streaming with web search...")
+        logger.info(f"ðŸ”„ No intent match, routing to RAG streaming with web search...")
         
         return StreamingResponse(
             stream_rag_response(req.message, req.developer_context or ""),
@@ -434,7 +439,7 @@ async def message_stream_endpoint(req: MessageRequest):
         )
         
     except Exception as e:
-        logger.error(f"❌ Stream endpoint error: {str(e)}")
+        logger.error(f"âŒ Stream endpoint error: {str(e)}")
         async def error_stream():
             yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
         
@@ -442,3 +447,6 @@ async def message_stream_endpoint(req: MessageRequest):
             error_stream(),
             media_type="text/event-stream"
         )
+
+
+

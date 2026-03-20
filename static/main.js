@@ -5,6 +5,11 @@ let formSchema = {};
 const developerContext = (window.RMW_DEV_CONTEXT || "").trim();
 const leadApiBase = '/v1/submit-lead';
 
+function getTimeoutMessage() {
+    const phone = contactInfo.phone || '+91-7290002168';
+    return `\n\nTaking a bit longer than usual. If this is the first message, the server may be waking up.\nYou can wait a few seconds, or contact us directly:\n📞 ${phone}`;
+}
+
 function scrollChatToBottom() {
     const chatBox = document.getElementById('chat-box');
     if (chatBox) {
@@ -30,7 +35,7 @@ async function loadChatConfig() {
     } catch (err) {
         console.error('❌ Configuration loading failed:', err);
         // Use defaults
-        chatConfig = { timeout_ms: 12000, typing_indicator_delay: 500, max_history: 6 };
+        chatConfig = { timeout_ms: 20000, typing_indicator_delay: 500, max_history: 6 };
         contactInfo = { phone: '+91-7290002168', email: 'info@ritzmediaworld.com' };
     }
 }
@@ -62,8 +67,11 @@ async function sendMessage() {
     
     const timeoutId = setTimeout(() => {
         controller.abort();
-        botMessageDiv.textContent += `\n\n⏳ Taking longer than usual. Try asking about a specific service like 'Digital Marketing' for an instant answer, or contact us directly:\n📞 ${contactInfo.phone}`;
-    }, chatConfig.timeout_ms || 12000);
+        const timeoutMessage = getTimeoutMessage();
+        botMessageDiv.textContent = botMessageDiv.textContent
+            ? `${botMessageDiv.textContent}${timeoutMessage}`
+            : timeoutMessage.trim();
+    }, chatConfig.timeout_ms || 20000);
 
     
     try {
