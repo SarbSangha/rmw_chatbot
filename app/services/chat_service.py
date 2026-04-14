@@ -224,6 +224,24 @@ def _is_next_step_query(question: str) -> bool:
     return has_agency_intent and has_next_step
 
 
+def _is_pricing_query(question: str) -> bool:
+    q = (question or "").lower()
+    pricing_keywords = (
+        "pricing",
+        "price",
+        "cost",
+        "charge",
+        "charges",
+        "fee",
+        "fees",
+        "how much",
+        "quotation",
+        "quote",
+        "budget",
+    )
+    return any(keyword in q for keyword in pricing_keywords)
+
+
 def _social_performance_combo_answer() -> str:
     return (
         "Yes. We can run Social Media Management and Performance Ads together as one integrated plan.\n\n"
@@ -270,6 +288,10 @@ def _next_step_answer() -> str:
         "4. Target geography\n\n"
         "After that, we can suggest a practical plan and timeline."
     )
+
+
+def _pricing_enquiry_answer() -> str:
+    return "To know about pricing, please fill the enquiry form to contact our team."
 
 
 def _is_brand_work_query(question: str) -> bool:
@@ -607,6 +629,11 @@ def run_chat_with_web(
         elapsed = time.time() - start
         logger.info(f"⏱️ Total time: {elapsed:.2f}s (top-newspaper fast path)")
         return {"answer": _top_newspapers_answer(question), "has_answer": True}
+
+    if _is_pricing_query(question):
+        elapsed = time.time() - start
+        logger.info(f"Total time: {elapsed:.2f}s (pricing fast path)")
+        return {"answer": _pricing_enquiry_answer(), "has_answer": True}
 
     state = {
         "question": question,
