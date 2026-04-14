@@ -72,6 +72,8 @@ def build_parallel_context(
 
 
 _LOW_CONFIDENCE_MARKERS = (
+    "the provided information",
+    "provided information does not specify",
     "provided website information",
     "provided information from",
     "do not list",
@@ -95,6 +97,42 @@ def needs_external_web_fallback(answer: str) -> bool:
     if not text:
         return True
     return any(marker in text for marker in _LOW_CONFIDENCE_MARKERS)
+
+
+def _remove_unwanted_provided_information_preface(answer: str) -> str:
+    text = (answer or "").strip()
+    if not text:
+        return ""
+
+    # Remove robotic opener like:
+    # "The provided information does not specify ..."
+    text = re.sub(
+        r"^\s*the provided (?:website )?information[^.?!]*[.?!]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    # Remove robotic "provided context does not specify..." style lines
+    # even when they appear mid-response (e.g., prefixed with "However,").
+    text = re.sub(
+        r"(?:^|\s)(?:however,\s*)?the provided (?:website )?context does not specify[^.?!]*[.?!]\s*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?:^|\s)(?:however,\s*)?the provided (?:website )?information does not specify[^.?!]*[.?!]\s*",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\s{2,}", " ", text).strip()
+
+    if not text:
+        return "Please share your requirement through the enquiry form, and our team will help you with the details."
+
+    return text
 
 
 def _is_top_fm_query(question: str) -> bool:
@@ -589,7 +627,7 @@ def upgrade_low_confidence_answer(
         if general_answer:
             upgraded_answer = general_answer
 
-    return upgraded_answer
+    return _remove_unwanted_provided_information_preface(upgraded_answer)
 
 
 def run_chat_with_web(
@@ -719,6 +757,8 @@ def run_chat_with_web(
             if general_answer:
                 answer = general_answer
 
+        answer = _remove_unwanted_provided_information_preface(answer)
+
         elapsed = time.time() - start
         logger.info(f"⏱️ Total time: {elapsed:.2f}s")
 
@@ -758,3 +798,4 @@ def run_chat(question: str, developer_context: str = "") -> dict:
         include_web=True,
         developer_context=developer_context,
     )
+
