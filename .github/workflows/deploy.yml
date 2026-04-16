@@ -34,7 +34,7 @@ jobs:
             fi
 
             echo "Activate env"
-            source .venv/bin/activate
+            source /venv/bin/activate
 
             echo "Install dependencies"
             pip install -r requirements.txt
