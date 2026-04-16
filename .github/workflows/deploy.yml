@@ -16,21 +16,28 @@ jobs:
           host: ${{ secrets.DROPLET_IP }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SECRET_KEY }}
-          debug: true
           script: |
             echo "Go To Project Directory"
             cd rmw_chatbot
 
-            echo "Take Pull From Main Branch"
+            echo "Pull latest code"
             git pull origin main
 
+            echo "Load NVM"
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+            echo "Setup virtual env"
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
 
             echo "Activate env"
-            python3 -m venv venv
-            ./venv/bin/pip install -r requirements.txt
+            source venv/bin/activate
 
             echo "Install dependencies"
+            pip install --upgrade pip
             pip install -r requirements.txt
 
             echo "Restart PM2"
-            pm2 restart chatbot
+            pm2 restart chatbot || pm2 start app.py --name chatbot --interpreter python3
