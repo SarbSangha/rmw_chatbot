@@ -24,6 +24,10 @@ jobs:
             echo "Take Pull From Main Branch"
             git pull origin main
 
+            echo "Install venv dependency"
+            sudo apt update
+            sudo apt install python3-venv -
+
             echo "Create virtual env if not exists"
             if [ ! -d ".venv" ]; then
               python3 -m venv .venv
