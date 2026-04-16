@@ -24,6 +24,11 @@ jobs:
             echo "Take Pull From Main Branch"
             git pull origin main
 
+            echo "Create virtual env if not exists"
+            if [ ! -d ".venv" ]; then
+              python3 -m venv .venv
+            fi
+
             echo "Activate env"
             source .venv/bin/activate
 
